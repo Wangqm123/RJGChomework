@@ -1,0 +1,34 @@
+# 岗位申请与审核服务配置（默认：H2 文件数据库，开箱即用）
+server:
+  port: 8082   # 约定：auth=8081，job=8082，attendance=8083，避免端口冲突
+
+spring:
+  datasource:
+    # H2 文件数据库：零安装，启动即用；数据落在 ./data/jobdb.mv.db
+    # 注意：与权限服务是不同的库（分布式服务各自独立数据库）
+    url: jdbc:h2:file:./data/jobdb;MODE=MySQL;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none        # 表结构由 schema.sql 管理，不自动改表
+    open-in-view: false
+    show-sql: true          # 控制台打印 SQL，方便调试
+  sql:
+    init:
+      mode: always          # 每次启动执行 schema.sql（IF NOT EXISTS）+ data.sql（幂等）
+  h2:
+    console:
+      enabled: true         # 浏览器访问 http://localhost:8082/h2-console 可查看数据
+      path: /h2-console
+
+# 权限服务地址（跨服务调用）
+auth:
+  service:
+    # 本机联调填 localhost；跨机器演示时改成运行权限服务那台机器的局域网 IP
+    base-url: http://localhost:8081
+
+logging:
+  level:
+    com.campus.job: info

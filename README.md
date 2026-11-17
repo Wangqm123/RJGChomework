@@ -1,8 +1,73 @@
-# 用户权限服务（auth-service）
+# 校园勤工助学岗位分布式管理系统
 
-校园勤工助学岗位分布式管理系统 · 三大服务之一。
+课程小组项目总 README：三个独立的 Spring Boot 服务，各自独立进程、独立数据库，只通过 HTTP 接口通信。
 
-## 一、这个服务是干什么的
+## 一、系统总览
+
+| 服务 | 端口 | 代码位置 | 负责人 | 状态 | 文档 |
+|---|---|---|---|---|---|
+| 用户权限服务（auth-service） | 8081 | 仓库根目录 | 成员 3 | 已完成 | 见本文第五节、《交接说明.md》 |
+| 岗位申请与审核服务（job-service） | 8082 | `job-service/` | 成员 4 | 已完成 | [job-service/README.md](job-service/README.md) |
+| 工时考勤与补贴核算服务（attendance-service） | 8083 | 待建 | 成员 5 | 开发中 | 接口见《接口文档初稿》服务3 |
+
+> 说明：本仓库根目录本身就是用户权限服务工程（成员 3 建立），
+> 岗位服务是与它平级的独立 Maven 工程，放在 `job-service/` 目录下，可单独构建、单独部署。
+
+## 二、全组统一约定（三个服务必须一致）
+
+**统一返回格式**
+
+```json
+{ "code": 200, "msg": "操作成功", "data": {} }
+```
+
+**错误码**：200 成功 / 400 参数错误（含业务规则冲突）/ 401 未登录或 Token 失效 / 403 权限不足 / 500 服务内部异常。
+
+**角色编号**
+
+| roleId | 角色 |
+|---|---|
+| 1 | 学生 |
+| 2 | 用工部门管理员 |
+| 3 | 勤工助学中心管理员 |
+| 4 | 系统管理员 |
+
+**Token 约定**：在权限服务登录拿到 JWT（24 小时有效），之后请求把 Token 放在请求头 `token` 中；
+业务服务不自己验签，统一调用权限服务 `/api/auth/checkToken` 校验。
+
+## 三、服务间调用链路
+
+```
+                    ① 登录拿 Token
+   前端 / 演示页面 ──────────────────────▶ auth-service(8081)
+        │
+        │ ② 业务请求（请求头 token）
+        ▼
+   job-service(8082) ──GET /api/auth/checkToken────▶ auth-service
+        │                 GET /api/auth/getUserInfo（取 deptId 做部门隔离）
+        │
+        ▼ ③ 工时服务签到链路（需求文档 3.3）
+   attendance-service(8083)
+     1. GET /api/auth/checkToken?token=xx          → 401 则拒绝
+     2. GET /api/job/getStudentHired?jobId&userId  → false 则拒绝
+     3. 两关都过，才允许新增签到记录
+```
+
+## 四、文档与工具索引
+
+| 文件 | 内容 | 维护人 |
+|---|---|---|
+| `job-service/README.md` | 岗位服务：接口、状态机、权限矩阵、联调说明 | 成员 4 |
+| `交接说明.md` | 权限服务交接：接口约定、接入步骤、排错速查 | 成员 3 |
+| `环境搭建指南.md` | JDK / VS Code / Maven 环境配置 | 成员 3 |
+| `接口测试台.html` | 权限服务浏览器图形化测试工具 | 成员 3 |
+| `原始任务分布.doc`、`需求文档.doc`、`接口文档初稿.doc` | 分工、需求、接口原始材料 | 全体 |
+
+---
+
+## 五、服务一：用户权限服务（auth-service，8081）
+
+### 5.1 这个服务是干什么的
 
 整个系统的"大门"：所有用户先在这里登录拿 Token（JWT），岗位审核服务、工时核算服务都依赖它校验身份。
 
@@ -12,7 +77,7 @@
 - **权限拦截**：非系统管理员调 addUser 直接返回 403
 - **参数校验**：非法参数（角色编号越界、密码过短等）返回 400 并提示具体原因
 
-## 二、环境准备（macOS / Windows 通用）
+### 5.2 环境准备（macOS / Windows 通用）
 
 | 工具 | 说明 |
 |---|---|
@@ -24,16 +89,16 @@
 > 这正好满足课程"多个子系统跑在不同机器"的要求。
 > 详细的安装配置步骤见《环境搭建指南.md》。
 
-## 三、怎么跑起来
+### 5.3 怎么跑起来
 
 **方式 1（推荐，VS Code）：**
-用 VS Code 打开 `auth-service` 文件夹 → 等 Java 插件索引完成 → 打开
+用 VS Code 打开仓库根目录（即 auth-service 工程）→ 等 Java 插件索引完成 → 打开
 `AuthServiceApplication.java` → 点 main 方法上方的「Run」。
 
 **方式 2（命令行）：**
 
 ```bash
-cd auth-service
+# 在仓库根目录（auth-service 工程根）执行
 mvn spring-boot:run
 ```
 
@@ -42,7 +107,7 @@ mvn spring-boot:run
 **首次使用先跑一遍测试（验证环境没问题）：**
 在测试文件 `AuthServiceTests.java` 上点 Run，7 个用例全绿即 OK。
 
-## 四、接口一览（按《接口文档初稿》实现）
+### 5.4 接口一览（按《接口文档初稿》实现）
 
 统一返回格式：`{"code": 200, "msg": "操作成功", "data": {}}`
 错误码：200 成功 / 400 参数错误 / 401 未登录或 Token 失效 / 403 权限不足 / 500 内部异常
@@ -57,7 +122,7 @@ mvn spring-boot:run
 
 **角色编号约定（全组统一）：** 1 学生 / 2 用工部门管理员 / 3 助学中心管理员 / 4 系统管理员
 
-## 五、接口测试
+### 5.5 接口测试
 
 三种方式任选：
 
@@ -85,7 +150,7 @@ curl -X POST http://localhost:8081/api/auth/addUser \
   -d '{"username":"studentX","password":"123456","name":"王五","studentNo":"2023123001","roleId":1}'
 ```
 
-## 六、预置演示账号（data.sql 自动初始化，密码统一 123456）
+### 5.6 预置演示账号（data.sql 自动初始化，密码统一 123456）
 
 | 账号 | 角色 |
 |---|---|
@@ -97,7 +162,7 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 
 数据库里存的是 BCrypt 加盐哈希，不存明文。
 
-## 七、其他服务怎么接入（联调要点）
+### 5.7 其他服务怎么接入（联调要点）
 
 其他服务收到前端请求后，先调 checkToken 校验身份，再执行业务：
 
@@ -108,9 +173,10 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 3. 两关都过，才允许新增签到记录
 ```
 
+岗位服务的实际接入方式（含超时、异常包装、部门隔离）见 [job-service/README.md](job-service/README.md) 第六节。
 详细的接口约定、代码对齐建议、排错速查见《交接说明.md》。
 
-## 八、技术说明
+### 5.8 技术说明
 
 - **JWT Token（无状态）**：登录签发 JWT（HMAC-SHA256 签名，24 小时过期），校验只验签名不查库、不依赖内存，服务重启 Token 也不失效——分布式系统的标准做法。密钥和有效期在 `application.yml` 的 `auth.jwt` 配置
 - **BCrypt 密码加密**：数据库只存加盐哈希（`$2a$10$...`），登录用 `PasswordEncoder.matches` 比对，新增用户入库前自动加密——同一密码每次哈希结果都不同，库泄露也反查不出明文
@@ -120,15 +186,16 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - **分布式体现**：本服务(8081)、岗位服务(8082)、工时服务(8083) 独立进程、独立数据库，
   只通过 HTTP 接口通信 —— 这就是「高内聚低耦合 + 服务解耦」
 
-## 九、项目结构
+### 5.9 项目结构
 
 ```
-auth-service
-├── pom.xml                          # Maven 依赖（Spring Boot 3.3 + Java 17 + JJWT + BCrypt）
-├── README.md                        # 本文件
+仓库根目录（auth-service 工程）
+├── pom.xml                          # 权限服务 Maven 依赖（Spring Boot 3.3 + Java 17 + JJWT + BCrypt）
+├── README.md                        # 本文件（系统总 README，含权限服务详细说明）
 ├── 交接说明.md                       # 接口约定、接入步骤、排错（给后续成员）
 ├── 环境搭建指南.md                   # 环境配置步骤（macOS / Windows）
 ├── 接口测试台.html                   # 浏览器图形化测试工具
+├── job-service/                     # 岗位申请与审核服务（成员 4，独立 Maven 工程，端口 8082）
 └── src
     ├── main
     │   ├── java/com/campus/auth
@@ -148,3 +215,18 @@ auth-service
     └── test/java/com/campus/auth
         └── AuthServiceTests.java              # 7 个单元测试用例
 ```
+
+## 六、服务二：岗位申请与审核服务（job-service，8082）
+
+概要（详细文档见 [job-service/README.md](job-service/README.md)）：
+
+- **岗位发布**（部门管理员）→ **中心审核**（上架 / 驳回）→ **学生投递** → **部门管理员录用/拒绝** → **招满 / 下架**
+- 7 个接口严格按《接口文档初稿》服务2 实现，另按《需求文档》补充修改、下架、申请列表 3 个接口
+- 身份校验调用权限服务 `checkToken`，并调 `getUserInfo` 取 deptId 做本部门数据隔离
+- 对工时服务提供 `GET /api/job/getStudentHired` 判断录用资格
+- 单元测试 29 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
+
+## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
+
+由成员 5 负责开发，接口见《接口文档初稿》服务3（签到、签退、月度工时补贴、部门/全校汇总），
+本 README 暂不展开，完成后由成员 5 补充说明。
