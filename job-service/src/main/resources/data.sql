@@ -1,5 +1,8 @@
 -- 预置演示数据（幂等：MERGE 已存在则更新，不会重复插入）
 --
+-- ⚠ 本脚本使用 H2 的 MERGE INTO ... KEY(id) 语法，仅适用于默认 H2 模式。
+--   切换 MySQL 时请改写为 INSERT ... ON DUPLICATE KEY UPDATE（详见 application-mysql.yml 注释）。
+--
 -- 岗位状态：0 草稿 / 1 待中心审核 / 2 已上架 / 3 已驳回 / 4 已招满 / 5 已下架
 -- 申请状态：0 待审核 / 1 已录用 / 2 已拒绝
 -- 用户 id 与权限服务预置账号对应：2=deptA(部门管理员,dept=1) / 3=center / 4=student1 / 5=student2

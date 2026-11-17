@@ -1,9 +1,11 @@
 package com.campus.job;
 
 import com.campus.job.client.AuthClient;
+import com.campus.job.common.ApplyStatus;
 import com.campus.job.common.BusinessException;
 import com.campus.job.common.JobStatus;
 import com.campus.job.entity.Job;
+import com.campus.job.entity.JobApply;
 import com.campus.job.repository.JobApplyRepository;
 import com.campus.job.repository.JobRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -360,7 +363,9 @@ class JobServiceTests {
                         .header("token", DEPT_TOKEN)
                         .param("jobId", "1"))
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.length()").value(2));
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].userId").value(4))
+                .andExpect(jsonPath("$.data[1].userId").value(5));
 
         mockMvc.perform(get("/api/job/listApply")
                         .header("token", DEPT2_TOKEN)
@@ -448,6 +453,16 @@ class JobServiceTests {
                 .andExpect(jsonPath("$.code").value(400));
     }
 
+    /** 把岗位名称改成空白字符串 → 400（不能绕过必填校验） */
+    @Test
+    void updateJobWithBlankNameRejected() throws Exception {
+        mockMvc.perform(post("/api/job/updateJob")
+                        .header("token", DEPT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":1,\"jobName\":\"   \"}"))
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
     // ==================== 并发控制（乐观锁） ====================
 
     /**
@@ -497,6 +512,49 @@ class JobServiceTests {
         // 5. 清理临时岗位
         newTx.execute(status -> {
             jobRepository.deleteById(jobId);
+            return null;
+        });
+    }
+
+    /**
+     * 同一份申请被并发"录用 + 拒绝"：
+     * 后提交的一方必须因版本号过期而失败，避免出现
+     * "岗位已录用人数 +1，但申请状态被改成已拒绝"的不一致数据。
+     */
+    @Test
+    void concurrentAuditOfSameApplyTriggersOptimisticLock() {
+        TransactionTemplate newTx = new TransactionTemplate(transactionManager);
+        newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        // 1. 独立事务插入一条临时申请（job1 + 不存在的学生 userId=42，避免影响种子数据）
+        Long applyId = newTx.execute(status -> {
+            JobApply apply = new JobApply();
+            apply.setJobId(1L);
+            apply.setUserId(42L);
+            apply.setStatus(ApplyStatus.PENDING);
+            return applyRepository.saveAndFlush(apply).getId();
+        });
+
+        // 2. 当前事务读到 version 快照
+        JobApply stale = applyRepository.findById(applyId).orElseThrow();
+
+        // 3. 另一个事务先提交"录用"
+        newTx.execute(status -> {
+            JobApply apply = applyRepository.findById(applyId).orElseThrow();
+            apply.setStatus(ApplyStatus.HIRED);
+            apply.setAuditTime(LocalDateTime.now());
+            applyRepository.saveAndFlush(apply);
+            return null;
+        });
+
+        // 4. 过期版本继续提交"拒绝" → 乐观锁异常
+        stale.setStatus(ApplyStatus.REFUSED);
+        assertThrows(ObjectOptimisticLockingFailureException.class,
+                () -> applyRepository.saveAndFlush(stale));
+
+        // 5. 清理临时申请
+        newTx.execute(status -> {
+            applyRepository.deleteById(applyId);
             return null;
         });
     }

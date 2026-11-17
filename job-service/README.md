@@ -1,4 +1,4 @@
-# 岗位申请与审核服务（job-service）
+﻿# 岗位申请与审核服务（job-service）
 
 校园勤工助学岗位分布式管理系统 · 三大服务之二，负责**岗位生命周期**与**投递/录用**的全流程。
 
@@ -45,7 +45,7 @@ mvn spring-boot:run
 
 首次启动会自动执行 `schema.sql`（建表）+ `data.sql`（预置演示数据），幂等可重复启动。
 
-运行单元测试（31 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（33 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -73,7 +73,7 @@ mvn test
 | `/api/job/applyJob` | POST | 学生投递岗位 | 学生本人 | `{applyId}` |
 | `/api/job/auditApply` | POST | 部门管理员审核申请 | 部门管理员（本部门） | `{status, statusName, jobStatus, jobStatusName}` |
 | `/api/job/getStudentHired` | GET | 是否被该岗位录用（工时服务调用） | 服务间调用 | `true` / `false` |
-| `/api/job/listMyApply` | GET | 我的申请记录 | 学生本人 | 申请列表（含岗位信息） |
+| `/api/job/listMyApply` | GET | 我的申请记录 | 学生本人 | 申请列表（含申请人 userId、岗位信息、审核状态） |
 
 ### 4.2 按《需求文档》和工时服务联调补充的 4 个接口（接口文档初稿未列出）
 
@@ -81,7 +81,7 @@ mvn test
 |---|---|---|---|
 | `/api/job/updateJob` | POST | 修改岗位（被驳回的岗位修改后重新送审） | 部门管理员（本部门） |
 | `/api/job/offlineJob` | POST | 下架岗位（JSON body 传 `jobId`） | 部门管理员（本部门） |
-| `/api/job/listApply` | GET | 查看某岗位的申请列表（`?jobId=`） | 部门管理员（本部门）/ 助学中心管理员 |
+| `/api/job/listApply` | GET | 查看某岗位的申请列表（`?jobId=`，含申请人 userId） | 部门管理员（本部门）/ 助学中心管理员 |
 | `/api/job/getJob` | GET | 岗位详情，任意状态（`?jobId=`），供工时服务核算补贴 | 服务间调用（无需 Token） |
 
 > 前 3 个对应需求文档 DeptAdmin-2「修改/下架岗位」和 3.2「申请记录查询」；
@@ -168,6 +168,8 @@ curl "http://localhost:8082/api/job/getJob?jobId=5"
 | 投递未上架（待审核/驳回/下架/招满）岗位 | 400 |
 | 岗位名额已满仍录用 | 400 |
 | 两个管理员同时录用最后一个名额（乐观锁冲突） | 400「该岗位刚被其他人更新，请刷新后重试」，本次操作整体回滚 |
+| 两个管理员同时审核同一份申请（一个录用一个拒绝，乐观锁冲突） | 400，后提交的一方整体回滚，不会出现"人数已加但申请被改成拒绝" |
+| 修改岗位时把名称/地点/描述改成空字符串 | 400「…不能为空」 |
 | 需求人数改得小于已录用人数 | 400 |
 | 已下架/已招满岗位修改 | 400 |
 | 驳回不填理由 | 400 |
@@ -247,7 +249,7 @@ job-service
     │       ├── schema.sql                       # t_job、t_job_apply
     │       └── data.sql                         # 演示岗位与申请
     └── test/java/com/campus/job
-        └── JobServiceTests.java                 # 31 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
+        └── JobServiceTests.java                 # 33 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
 ```
 
 ## 九、技术说明
@@ -257,9 +259,12 @@ job-service
 - **权限服务客户端超时**：连接 3s / 读取 5s，避免对方服务卡死拖垮本服务；
 - **事务与名额控制**：录用操作在 `@Transactional` 事务内完成"校验名额 → 申请置为已录用 → 岗位人数 +1 → 满额转招满"，
   避免出现"申请已录用但岗位未计数"的中间状态；
-- **乐观锁防超额录用**：`t_job.version` + JPA `@Version`。两个管理员同时录用最后一个名额时，
-  后提交的一方影响行数为 0，抛乐观锁异常 → 事务整体回滚 → 返回 400「该岗位刚被其他人更新，请刷新后重试」，
-  不会出现"两个人都录用成功"；
+- **乐观锁防并发覆盖**：`t_job.version` 与 `t_job_apply.version` + JPA `@Version`。
+  两个管理员同时录用最后一个名额时，后提交的一方影响行数为 0；
+  同一份申请被同时"录用/拒绝"时，后提交的一方同样失败；
+  两种情况都会整体回滚并返回 400「该岗位刚被其他人更新，请刷新后重试」，不会产生人数与状态不一致的数据；
 - **唯一约束兜底**：并发重复投递时由数据库 `(job_id, user_id)` 唯一约束拦截，全局异常处理器转成 400；
-- **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL；
+- **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL。
+  注意 `schema.sql` 为通用语法，但 `data.sql` 是 H2 的 `MERGE` 幂等写法，
+  MySQL 模式需先改写为 `INSERT ... ON DUPLICATE KEY UPDATE`（见 `application-mysql.yml` 注释）；
 - **测试隔离**：单元测试用内存库 + `@Transactional` 回滚，不污染开发用的 `./data/jobdb`。

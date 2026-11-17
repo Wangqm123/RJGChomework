@@ -1,4 +1,4 @@
-# 校园勤工助学岗位分布式管理系统
+﻿# 校园勤工助学岗位分布式管理系统
 
 课程小组项目总 README：三个独立的 Spring Boot 服务，各自独立进程、独立数据库，只通过 HTTP 接口通信。
 
@@ -225,7 +225,7 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - 7 个接口严格按《接口文档初稿》服务2 实现，另补充修改、下架、申请列表、岗位详情 4 个接口（`getJob` 供工时服务核算补贴）
 - 身份校验调用权限服务 `checkToken`，并调 `getUserInfo` 取 deptId 做本部门数据隔离
 - 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门）
-- 单元测试 31 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
+- 单元测试 33 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
 
 ## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
 

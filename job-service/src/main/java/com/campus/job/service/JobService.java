@@ -138,17 +138,18 @@ public class JobService {
             throw new BusinessException(400, "已招满的岗位不能修改");
         }
 
+        // 只更新传了值的字段；传了空字符串/纯空格一律视为非法，避免把必填内容改成空
         if (req.getJobName() != null) {
-            job.setJobName(req.getJobName());
+            job.setJobName(requireNotBlank(req.getJobName(), "岗位名称不能为空"));
         }
         if (req.getAddress() != null) {
-            job.setAddress(req.getAddress());
+            job.setAddress(requireNotBlank(req.getAddress(), "工作地点不能为空"));
         }
         if (req.getHourSalary() != null) {
             job.setHourSalary(req.getHourSalary());
         }
         if (req.getDescription() != null) {
-            job.setDescription(req.getDescription());
+            job.setDescription(requireNotBlank(req.getDescription(), "岗位描述不能为空"));
         }
         if (req.getNeedNum() != null) {
             if (req.getNeedNum() < job.getHiredNum()) {
@@ -191,6 +192,14 @@ public class JobService {
     private Job getJobOrThrow(Long jobId) {
         return jobRepository.findById(jobId)
                 .orElseThrow(() -> new BusinessException(400, "岗位不存在：id=" + jobId));
+    }
+
+    /** 修改岗位时的文本字段校验：空白值直接拒绝，正常值去首尾空格 */
+    private String requireNotBlank(String value, String message) {
+        if (value.isBlank()) {
+            throw new BusinessException(400, message);
+        }
+        return value.trim();
     }
 
     /** 部门数据隔离：只能操作本部门岗位 */

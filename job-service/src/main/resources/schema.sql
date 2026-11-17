@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS t_job_apply (
     remark     VARCHAR(200),
     apply_time TIMESTAMP,
     audit_time TIMESTAMP,
+    -- 乐观锁版本号：防止同一份申请被并发做出相反审核决定
+    version    BIGINT      NOT NULL DEFAULT 0,
     -- 一个学生对同一岗位只能投递一次（需求文档 3.2）
     CONSTRAINT uk_apply_job_user UNIQUE (job_id, user_id)
 );

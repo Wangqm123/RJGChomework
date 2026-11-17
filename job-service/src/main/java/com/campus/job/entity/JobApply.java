@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 
 import java.time.LocalDateTime;
 
@@ -48,6 +49,15 @@ public class JobApply {
 
     /** 审核时间 */
     private LocalDateTime auditTime;
+
+    /**
+     * 乐观锁版本号：防止两个部门管理员同时对同一份申请做出相反决定
+     * （一个录用、一个拒绝）时互相覆盖状态。
+     * 后提交的一方影响行数为 0 → 抛乐观锁异常 → 整个事务回滚。
+     */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @PrePersist
     public void onCreate() {
@@ -110,5 +120,13 @@ public class JobApply {
 
     public void setAuditTime(LocalDateTime auditTime) {
         this.auditTime = auditTime;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 }
