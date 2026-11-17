@@ -50,7 +50,8 @@
    attendance-service(8083)
      1. GET /api/auth/checkToken?token=xx          → 401 则拒绝
      2. GET /api/job/getStudentHired?jobId&userId  → false 则拒绝
-     3. 两关都过，才允许新增签到记录
+     3. GET /api/job/getJob?jobId=xx               → 取 hourSalary、deptId 核算补贴（需存时薪快照）
+     4. 以上都通过，才允许新增签到记录
 ```
 
 ## 四、文档与工具索引
@@ -221,10 +222,10 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 概要（详细文档见 [job-service/README.md](job-service/README.md)）：
 
 - **岗位发布**（部门管理员）→ **中心审核**（上架 / 驳回）→ **学生投递** → **部门管理员录用/拒绝** → **招满 / 下架**
-- 7 个接口严格按《接口文档初稿》服务2 实现，另按《需求文档》补充修改、下架、申请列表 3 个接口
+- 7 个接口严格按《接口文档初稿》服务2 实现，另补充修改、下架、申请列表、岗位详情 4 个接口（`getJob` 供工时服务核算补贴）
 - 身份校验调用权限服务 `checkToken`，并调 `getUserInfo` 取 deptId 做本部门数据隔离
-- 对工时服务提供 `GET /api/job/getStudentHired` 判断录用资格
-- 单元测试 29 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
+- 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门）
+- 单元测试 31 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
 
 ## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
 

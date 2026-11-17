@@ -45,7 +45,7 @@ mvn spring-boot:run
 
 首次启动会自动执行 `schema.sql`（建表）+ `data.sql`（预置演示数据），幂等可重复启动。
 
-运行单元测试（29 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（31 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -75,16 +75,19 @@ mvn test
 | `/api/job/getStudentHired` | GET | 是否被该岗位录用（工时服务调用） | 服务间调用 | `true` / `false` |
 | `/api/job/listMyApply` | GET | 我的申请记录 | 学生本人 | 申请列表（含岗位信息） |
 
-### 4.2 按《需求文档》补充的 3 个接口（接口文档初稿未列出）
+### 4.2 按《需求文档》和工时服务联调补充的 4 个接口（接口文档初稿未列出）
 
 | 接口 | 方式 | 说明 | 权限 |
 |---|---|---|---|
 | `/api/job/updateJob` | POST | 修改岗位（被驳回的岗位修改后重新送审） | 部门管理员（本部门） |
 | `/api/job/offlineJob` | POST | 下架岗位（JSON body 传 `jobId`） | 部门管理员（本部门） |
 | `/api/job/listApply` | GET | 查看某岗位的申请列表（`?jobId=`） | 部门管理员（本部门）/ 助学中心管理员 |
+| `/api/job/getJob` | GET | 岗位详情，任意状态（`?jobId=`），供工时服务核算补贴 | 服务间调用（无需 Token） |
 
-> 这三个接口对应需求文档 DeptAdmin-2「修改/下架岗位」和 3.2「申请记录查询」，
-> 接口文档初稿遗漏了它们，实现时标注为补充接口，后续可请成员 2 补进正式接口文档。
+> 前 3 个对应需求文档 DeptAdmin-2「修改/下架岗位」和 3.2「申请记录查询」；
+> 最后一个 `getJob` 是工时服务联调时提出的缺口：`listJob` 只返回已上架岗位，
+> 而岗位招满/下架后学生历史工时仍要结算，需要能随时取到 `hourSalary`、`deptId`、`status`。
+> 这四个接口均未出现在接口文档初稿中，后续可请成员 2 补进正式文档。
 
 ### 4.3 请求示例
 
@@ -124,6 +127,9 @@ curl "http://localhost:8082/api/job/getStudentHired?jobId=7&userId=4"
 curl -X POST http://localhost:8082/api/job/offlineJob \
   -H "Content-Type: application/json" -H "token: <deptA的token>" \
   -d '{"jobId":7}'
+
+# 8. 查询岗位详情（已下架/已招满岗位同样可查，供工时服务核算补贴）
+curl "http://localhost:8082/api/job/getJob?jobId=5"
 ```
 
 ## 五、状态机与业务规则
@@ -181,10 +187,14 @@ job-service(8082) ──GET /api/auth/checkToken────▶ auth-service(808
       │
       ▼  工时服务签到链路
 attendance-service(8083)
-   1. GET /api/auth/checkToken?token=xx        → 401 则拒绝
+   1. GET /api/auth/checkToken?token=xx         → 401 则拒绝
    2. GET /api/job/getStudentHired?jobId&userId → false 则拒绝
-   3. 两关都过，才允许新增签到记录
+   3. GET /api/job/getJob?jobId=xx              → 取 hourSalary、deptId 核算补贴
+   4. 以上都通过，才允许新增签到记录
 ```
+
+> **补贴计算注意**：`getJob` 返回的是**当前时薪**。部门管理员修改时薪后，历史月份的补贴不应被改写，
+> 建议工时服务在签到时（或月结时）把 `hourSalary` 快照存进自己的工时记录，历史结算使用快照值。
 
 - 本服务**不保存用户表**，只存 `user_id`、`dept_id` 这类逻辑外键（分布式独立数据库，不能跨库外键）；
 - `application.yml` 里的 `auth.service.base-url` 跨机器联调时改成对方局域网 IP；
@@ -221,8 +231,8 @@ job-service
     ├── main
     │   ├── java/com/campus/job
     │   │   ├── JobServiceApplication.java       # 启动类（8082）
-    │   │   ├── controller/JobController.java    # 10 个接口入口
-    │   │   ├── service/JobService.java          # 发布/审核/浏览/修改/下架
+    │   │   ├── controller/JobController.java    # 11 个接口入口
+    │   │   ├── service/JobService.java          # 发布/审核/浏览/详情/修改/下架
     │   │   ├── service/ApplyService.java        # 投递/审核申请/录用查询/申请列表
     │   │   ├── service/AuthGuard.java           # Token 校验 + 角色/部门权限拦截
     │   │   ├── client/AuthClient.java           # 调用权限服务的 HTTP 客户端（含超时、异常包装）
@@ -237,7 +247,7 @@ job-service
     │       ├── schema.sql                       # t_job、t_job_apply
     │       └── data.sql                         # 演示岗位与申请
     └── test/java/com/campus/job
-        └── JobServiceTests.java                 # 29 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
+        └── JobServiceTests.java                 # 31 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
 ```
 
 ## 九、技术说明

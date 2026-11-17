@@ -104,6 +104,20 @@ public class JobController {
     }
 
     /**
+     * GET /api/job/getJob 查询岗位详情（任意状态，给工时服务核算补贴用）
+     * 请求参数：jobId
+     * 返回 data：JobView（含 hourSalary、deptId、status 等）
+     *
+     * 说明：listJob 只返回已上架岗位，而历史工时在下架/招满后仍要结算，
+     * 因此单独提供该接口；工时服务调用无需 Token（与 getStudentHired 一致）。
+     * 注意：补贴应按当时时薪快照结算，本接口返回的是当前时薪。
+     */
+    @GetMapping("/getJob")
+    public ApiResponse<JobView> getJob(@RequestParam("jobId") Long jobId) {
+        return ApiResponse.ok(jobService.getJob(jobId));
+    }
+
+    /**
      * GET /api/job/getStudentHired 查询学生是否被该岗位录用（给工时服务调用）
      * 请求参数：jobId、userId
      * 返回 data：true / false

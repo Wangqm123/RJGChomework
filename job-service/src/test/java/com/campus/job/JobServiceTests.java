@@ -368,6 +368,27 @@ class JobServiceTests {
                 .andExpect(jsonPath("$.code").value(403));
     }
 
+    // ==================== 岗位详情（工时服务联调补充） ====================
+
+    /** 已下架岗位也能查到时薪、部门、状态（历史工时结算依赖，不能只查已上架列表） */
+    @Test
+    void getJobDetailForOfflineJob() throws Exception {
+        mockMvc.perform(get("/api/job/getJob").param("jobId", "5"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.jobId").value(5))
+                .andExpect(jsonPath("$.data.hourSalary").value(18.0))
+                .andExpect(jsonPath("$.data.deptId").value(1))
+                .andExpect(jsonPath("$.data.status").value(5))
+                .andExpect(jsonPath("$.data.statusName").value("已下架"));
+    }
+
+    /** 岗位不存在 → 400 */
+    @Test
+    void getJobNotFound() throws Exception {
+        mockMvc.perform(get("/api/job/getJob").param("jobId", "999"))
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
     // ==================== 修改 / 下架（补充接口） ====================
 
     /** 已上架岗位下架成功（jobId 走 JSON 请求体） */

@@ -95,6 +95,17 @@ public class JobService {
     }
 
     /**
+     * 查询岗位详情（任意状态）。
+     *
+     * 给工时服务核算补贴/判断岗位状态使用：
+     * 已招满、已下架的历史岗位查不到会影响历史工时结算，
+     * 所以这里不限制 status，由调用方根据返回的 status 自行判断。
+     */
+    public JobView getJob(Long jobId) {
+        return JobView.from(getJobOrThrow(jobId));
+    }
+
+    /**
      * 学生浏览已上架岗位（分页）。page 从 1 开始，size 最大 50，防止一次拉太多数据。
      */
     public PageResult<JobView> listJobs(Integer page, Integer size) {
