@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>auth-service · 接口控制台</title>
+<style>
+  :root {
+    --bg: #F5F6F8;
+    --panel: #FFFFFF;
+    --side: #FAFBFC;
+    --ink: #1F2329;
+    --ink-2: #646A73;
+    --ink-3: #8F959E;
+    --line: #E3E6EB;
+    --accent: #1668DC;
+    --accent-dark: #0E4FA8;
+    --get: #18A058;
+    --get-bg: #E8F7EF;
+    --post: #D9730D;
+    --post-bg: #FBF0E5;
+    --ok: #18A058;
+    --warn: #D9730D;
+    --err: #D93026;
+    --console: #1D2129;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px; color: var(--ink); background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  .app { display: flex; height: 100vh; }
+
+  /* ===== 左侧导航 ===== */
+  aside {
+    width: 252px; flex: none; background: var(--side);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+  }
+  .brand { padding: 18px 16px 16px; border-bottom: 1px solid var(--line); }
+  .brand-name { font-size: 15px; font-weight: 700; letter-spacing: .06em; font-family: "SF Mono", Menlo, monospace; }
+  .brand-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .conn { display: flex; align-items: center; gap: 7px; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--err); }
+
+  nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+  .nav-label { font-size: 12px; color: var(--ink-3); padding: 12px 10px 7px; letter-spacing: .05em; }
+  .nav-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 10px; border-radius: 4px; cursor: pointer;
+    color: var(--ink-2); font-size: 14px; margin-bottom: 2px;
+    white-space: nowrap;
+  }
+  .nav-item:hover { background: #EFF1F4; color: var(--ink); }
+  .nav-item.active { background: #E8EEF9; color: var(--accent-dark); font-weight: 600; }
+  .nav-item .path { font-family: "SF Mono", Menlo, monospace; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+
+  .m {
+    font-size: 11px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+    font-family: "SF Mono", Menlo, monospace; letter-spacing: .03em; flex: none; width: 46px; text-align: center;
+  }
+  .m.get { color: var(--get); background: var(--get-bg); }
+  .m.post { color: var(--post); background: var(--post-bg); }
+  .m.run { color: var(--accent); background: #E8EEF9; width: 46px; }
+
+  .side-foot { border-top: 1px solid var(--line); padding: 14px 16px; }
+  .id-card { font-size: 13px; color: var(--ink-2); line-height: 1.75; }
+  .id-card b { color: var(--ink); font-weight: 600; }
+  .ver { font-size: 12px; color: var(--ink-3); margin-top: 7px; font-family: "SF Mono", Menlo, monospace; }
+
+  /* ===== 主区域 ===== */
+  main { flex: 1; overflow-y: auto; padding: 20px 24px 40px; min-width: 0; }
+  .panel { display: none; max-width: 860px; }
+  .panel.active { display: block; }
+
+  /* 服务信息条 */
+  .main-head {
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px 16px; margin-bottom: 18px; max-width: 860px;
+  }
+  .kv { font-size: 12.5px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; }
+  .kv b { color: var(--ink); font-weight: 600; font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  .kv .sep { width: 1px; height: 12px; background: var(--line); }
+
+  /* 请求地址栏（Postman 式） */
+  .urlbar {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; margin-bottom: 14px; max-width: 860px;
+  }
+  .urlbar .u {
+    flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+    color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .urlbar button { flex: none; }
+
+  .p-head { margin-bottom: 16px; }
+  .p-head h2 { font-size: 17px; font-weight: 600; font-family: "SF Mono", Menlo, monospace; display: flex; align-items: center; gap: 10px; }
+  .p-head .desc { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.7; }
+  .p-head .desc b { color: var(--ink); font-weight: 500; }
+
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 14px; }
+  .block-title {
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px; letter-spacing: .02em;
+  }
+  .block-body { padding: 14px; }
+
+  .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-row:last-child { margin-bottom: 0; }
+  label.f { font-size: 13.5px; color: var(--ink-2); width: 68px; flex: none; }
+  input, textarea {
+    border: 1px solid var(--line); border-radius: 4px; padding: 8px 11px;
+    font-size: 13.5px; background: #fff; color: var(--ink);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    transition: border-color .12s;
+  }
+  input { width: 260px; }
+  textarea { width: 100%; resize: vertical; }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+  button {
+    cursor: pointer; border: 1px solid transparent; border-radius: 4px;
+    padding: 7px 16px; font-size: 13px; font-weight: 500;
+    background: var(--accent); color: #fff; transition: background .12s;
+    white-space: nowrap;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:active { opacity: .85; }
+  button.plain { background: #fff; color: var(--ink); border-color: var(--line); }
+  button.plain:hover { background: #F5F6F8; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 账号表 */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px; padding: 7px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 14px; border-bottom: 1px solid #F0F2F5; }
+  tr:last-child td { border-bottom: none; }
+  td .u { font-family: "SF Mono", Menlo, monospace; }
+  td button { padding: 4px 14px; font-size: 12.5px; white-space: nowrap; }
+
+  /* 响应控制台 */
+  .resp-chip { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 3px; font-family: "SF Mono", Menlo, monospace; }
+  .chip-ok { background: #E8F7EF; color: var(--ok); }
+  .chip-warn { background: #FBF0E5; color: var(--warn); }
+  .chip-err { background: #FCEAEA; color: var(--err); }
+  pre.console {
+    background: var(--console); color: #C9CDD4;
+    border-radius: 0 0 6px 6px; padding: 14px 16px;
+    font-size: 12.5px; line-height: 1.8; font-family: "SF Mono", Menlo, Consolas, monospace;
+    overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-all;
+  }
+  .console.empty { color: var(--ink-3); background: #F7F8FA; display: flex; align-items: center; min-height: 56px; padding: 14px; border: 1px dashed var(--line); border-top: none; }
+  .j-key { color: #79C0FF; } .j-str { color: #A5D6A7; } .j-num { color: #F2A6A6; } .j-bool, .j-null { color: #D2A8FF; }
+
+  /* 演示终端 */
+  .term {
+    background: var(--console); border-radius: 6px; padding: 14px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 2.0;
+    color: #ADB1B8; max-height: 480px; overflow: auto; min-height: 200px;
+  }
+  .term .hint { color: #4E5561; }
+  .tline { margin-bottom: 2px; }
+  .tline .tt { color: #4E5561; margin-right: 10px; }
+  .tline .code { font-weight: 700; margin-right: 10px; }
+  .code.c2 { color: #4ADE80; } .code.c4 { color: #FBBF24; } .code.c5 { color: #F87171; }
+  .tline .lbl { color: #E5E7EB; }
+  .tline details { margin: 2px 0 8px 58px; }
+  .tline summary { color: #4E5561; cursor: pointer; font-size: 11px; user-select: none; }
+  .tline pre { color: #9CA3AF; font-size: 11.5px; padding: 6px 0 0 12px; white-space: pre-wrap; word-break: break-all; }
+
+  .foot-note { font-size: 12.5px; color: var(--ink-3); margin-top: 14px; line-height: 1.8; }
+  .foot-note code { font-family: "SF Mono", Menlo, monospace; background: #EFF1F4; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside>
+    <div class="brand">
+      <div class="brand-name">AUTH-SERVICE</div>
+      <div class="brand-sub">用户权限服务 · 接口控制台</div>
+      <div class="conn"><span class="dot" id="dot"></span><span id="statusText">检测连接中…</span></div>
+    </div>
+    <nav>
+      <div class="nav-label">接口列表 · /api/auth</div>
+      <div class="nav-item active" data-p="p-login" onclick="nav('p-login', this)"><span class="m post">POST</span><span class="path">/login</span></div>
+      <div class="nav-item" data-p="p-check" onclick="nav('p-check', this)"><span class="m get">GET</span><span class="path">/checkToken</span></div>
+      <div class="nav-item" data-p="p-user" onclick="nav('p-user', this)"><span class="m get">GET</span><span class="path">/getUserInfo</span></div>
+      <div class="nav-item" data-p="p-add" onclick="nav('p-add', this)"><span class="m post">POST</span><span class="path">/addUser</span></div>
+      <div class="nav-label">自动化</div>
+      <div class="nav-item" data-p="p-demo" onclick="nav('p-demo', this)"><span class="m run">RUN</span><span class="path">全流程演示</span></div>
+    </nav>
+    <div class="side-foot">
+      <div class="id-card" id="idCard"><b>未登录</b>· 无可用 Token</div>
+      <div class="ver">auth-service 1.0.0 · :8081</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="main-head">
+      <span class="kv">服务地址 <b>localhost:8081</b></span>
+      <span class="kv">接口前缀 <b>/api/auth</b></span>
+      <span class="kv">身份凭证 <b>JWT · HS256</b></span>
+      <span class="kv">有效期 <b>24h</b></span>
+      <span class="kv">密码加密 <b>BCrypt</b></span>
+    </div>
+
+    <!-- 登录 -->
+    <section class="panel active" id="p-login">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/auth/login</h2>
+        <div class="desc">账号密码登录，签发 <b>JWT Token</b>（24 小时有效）。返回 token、userId、roleId、role。</div>
+      </div>
+      <div class="urlbar"><span class="m post">POST</span><span class="u">http://localhost:8081/api/auth/login</span><button onclick="doLogin()">发送</button></div>
+      <div class="block">
+        <div class="block-title">演示账号（密码统一 123456）</div>
+        <table id="accTable"></table>
+      </div>
+      <div class="block">
+        <div class="block-title">请求参数</div>
+        <div class="block-body">
+          <div class="form-row"><label class="f">username</label><input id="loginUser" value="student1"></div>
+          <div class="form-row"><label class="f">password</label><input id="loginPass" type="password" value="123456"></div>
+        </div>
+      </div>
+      <div class="foot-note">表格的「快速登录」= 自动填入账号密码并立即发送；手动修改参数后点上方「发送」= 用当前表单内容请求（可改错密码测试 400 场景）。</div>
+      <div class="block">
+        <div class="block-title">响应结果 <span class="resp-chip" id="loginChip" style="display:none"></span></div>
+        <pre id="loginResp" class="console empty">发送请求后此处显示响应 JSON</pre>
+      </div>
+    </section>
+
+    <!-- checkToken -->
+    <section class="panel" id="p-check">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/auth/checkToken</h2>
+        <div class="desc">给<b>岗位服务、工时服务</b>调用的身份校验入口。验签通过返回 userId 和角色；签名无效或过期返回 <b>401</b>。</div>
+      </div>
+      <div class="urlbar"><span class="m get">GET</span><span class="u">http://localhost:8081/api/auth/checkToken?token=...</span><button onclick="doCheck()">发送</button></div>
+      <div class="block">
+        <div class="block-title">请求参数</div>
+        <div class="block-body">
+          <div class="form-row"><label class="f">token</label><textarea id="checkInput" rows="3" placeholder="登录后自动填入，也可手动粘贴其他 Token"></textarea></div>
+          <div class="form-row"><label class="f"></label><button class="plain" onclick="doCheckBad()">无效 Token（应 401）</button></div>
+        </div>
+      </div>
+      <div class="block">
+        <div class="block-title">响应结果 <span class="resp-chip" id="checkChip" style="display:none"></span></div>
+        <pre id="checkResp" class="console empty">发送请求后此处显示响应 JSON</pre>
+      </div>
+      <div class="foot-note">调用方式二选一：<code>?token=xxx</code> URL 参数，或请求头 <code>token: xxx</code>。本控制台使用 URL 参数演示。</div>
+    </section>
+
+    <!-- getUserInfo -->
+    <section class="panel" id="p-user">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/auth/getUserInfo</h2>
+        <div class="desc">按用户 id 查询姓名、学号、部门、角色，业务服务渲染用户信息时使用。</div>
+      </div>
+      <div class="urlbar"><span class="m get">GET</span><span class="u">http://localhost:8081/api/auth/getUserInfo?userId=4</span><button onclick="doGetUser()">发送</button></div>
+      <div class="block">
+        <div class="block-title">请求参数</div>
+        <div class="block-body">
+          <div class="form-row"><label class="f">userId</label><input id="uidInput" value="4" style="width:120px"></div>
+        </div>
+      </div>
+      <div class="block">
+        <div class="block-title">响应结果 <span class="resp-chip" id="userChip" style="display:none"></span></div>
+        <pre id="userResp" class="console empty">发送请求后此处显示响应 JSON</pre>
+      </div>
+    </section>
+
+    <!-- addUser -->
+    <section class="panel" id="p-add">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/auth/addUser</h2>
+        <div class="desc">系统管理员新增用户、分配角色。操作者 Token 放请求头，<b>非管理员返回 403</b>（权限拦截）。密码入库前经 BCrypt 加密。</div>
+      </div>
+      <div class="urlbar"><span class="m post">POST</span><span class="u">http://localhost:8081/api/auth/addUser</span><button onclick="doAdd()">发送</button><button class="plain" onclick="doAddDenied()">学生身份发送（应 403）</button></div>
+      <div class="block">
+        <div class="block-title">请求参数</div>
+        <div class="block-body">
+          <div class="form-row"><label class="f">username</label><input id="nuName" value="student2026"></div>
+          <div class="form-row"><label class="f">password</label><input id="nuPass" value="123456"></div>
+          <div class="form-row"><label class="f">name</label><input id="nuReal" value="王五"></div>
+          <div class="form-row"><label class="f">roleId</label><input id="nuRole" value="1" style="width:90px"><span style="font-size:12px;color:var(--ink-3)">1 学生 · 2 部门管理员 · 3 中心管理员 · 4 系统管理员</span></div>
+        </div>
+      </div>
+      <div class="block">
+        <div class="block-title">响应结果 <span class="resp-chip" id="addChip" style="display:none"></span></div>
+        <pre id="addResp" class="console empty">发送请求后此处显示响应 JSON</pre>
+      </div>
+    </section>
+
+    <!-- 演示 -->
+    <section class="panel" id="p-demo">
+      <div class="p-head">
+        <h2><span class="m run">RUN</span>全流程自动化演示</h2>
+        <div class="desc">管理员登录 → Token 校验 → 查询用户 → <b>学生越权被拦（403，预期）</b> → 管理员新增用户。覆盖需求文档 3.1 的四条功能需求。</div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <button id="demoBtn" onclick="runDemo()">执行演示</button>
+        <button class="plain" onclick="clearDemo()">清空输出</button>
+      </div>
+      <div class="term" id="demoLog"><span class="hint">// 点击「执行演示」，请求日志将在此输出</span></div>
+    </section>
+  </main>
+</div>
+
+<script>
+// 服务地址：测本机服务用 localhost；跨机器联调改成对方的局域网 IP，如 http://192.168.1.20:8081/api/auth
+const BASE = 'http://localhost:8081/api/auth';
+let TOKEN = null;
+
+const ACCOUNTS = [
+  { u: 'student1', r: '学生', d: '张三 · 2023123401' },
+  { u: 'student2', r: '学生', d: '李四 · 2023123402' },
+  { u: 'deptA',    r: '部门管理员', d: '图书馆 · 部门 1' },
+  { u: 'center',   r: '助学中心管理员', d: '中心 · 全校报表' },
+  { u: 'admin',    r: '系统管理员', d: '用户与角色管理' },
+];
+
+/* 导航切换 */
+function nav(id, el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* 账号表 */
+document.getElementById('accTable').innerHTML =
+  '<tr><th>账号</th><th>角色</th><th>说明</th><th style="width:110px"></th></tr>' +
+  ACCOUNTS.map(a => `<tr><td class="u">${a.u}</td><td>${a.r}</td><td style="color:var(--ink-3)">${a.d}</td>
+    <td><button class="plain" onclick="quickLogin('${a.u}')">快速登录</button></td></tr>`).join('');
+
+async function quickLogin(u) {
+  document.getElementById('loginUser').value = u;
+  document.getElementById('loginPass').value = '123456';
+  await doLogin();
+}
+
+/* 连接状态 */
+async function checkStatus() {
+  const dot = document.getElementById('dot'), txt = document.getElementById('statusText');
+  try {
+    const j = await (await fetch(BASE + '/getUserInfo?userId=1')).json();
+    dot.className = 'dot ' + (j.code === 200 ? 'on' : 'off');
+    txt.textContent = j.code === 200 ? '已连接 localhost:8081' : '服务响应异常';
+  } catch (e) {
+    dot.className = 'dot off';
+    txt.textContent = '未连接 · 请先启动服务';
+  }
+}
+checkStatus();
+setInterval(checkStatus, 15000);
+
+/* 身份卡片 */
+function setIdentity(u, role, userId) {
+  document.getElementById('idCard').innerHTML =
+    u ? `<b>${role}</b> · ${u}<br>userId = ${userId} · 已登录` : '<b>未登录</b> · 无可用 Token';
+}
+
+/* JSON 语法高亮 */
+function hl(json) {
+  const esc = json.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return esc.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|\b-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, m => {
+    let cls = 'j-num';
+    if (/^"/.test(m)) cls = /:$/.test(m) ? 'j-key' : 'j-str';
+    else if (/true|false/.test(m)) cls = 'j-bool';
+    else if (/null/.test(m)) cls = 'j-null';
+    return `<span class="${cls}">${m}</span>`;
+  });
+}
+
+function fmt(j) { return JSON.stringify(j, null, 2); }
+
+/** 带计时的请求封装 */
+async function api(url, opts) {
+  const t0 = performance.now();
+  const j = await (await fetch(url, opts)).json();
+  return { j, ms: Math.round(performance.now() - t0) };
+}
+
+/* 响应展示：状态 chip（含耗时）+ JSON 控制台 */
+function show(id, text, code, ms) {
+  const chip = document.getElementById(id.replace('Resp', 'Chip'));
+  const el = document.getElementById(id);
+  if (chip) {
+    chip.style.display = code ? '' : 'none';
+    if (code) {
+      const cls = code === 200 ? 'chip-ok' : (code === 400 || code === 401) ? 'chip-warn' : 'chip-err';
+      chip.className = 'resp-chip ' + cls;
+      chip.textContent = 'HTTP ' + code + (ms ? ' · ' + ms + ' ms' : '');
+    }
+  }
+  el.className = 'console';
+  el.innerHTML = hl(text);
+}
+
+async function doLogin() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  try {
+    const { j, ms } = await api(BASE + '/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    show('loginResp', fmt(j), j.code, ms);
+    if (j.code === 200) {
+      TOKEN = j.data.token;
+      setIdentity(u, j.data.role, j.data.userId);
+      document.getElementById('checkInput').value = TOKEN;
+      document.getElementById('uidInput').value = j.data.userId;
+    }
+  } catch (e) { show('loginResp', '// 请求失败：' + e.message + '\n// 服务未启动？在 VS Code 运行 AuthServiceApplication'); }
+}
+
+async function doCheck() {
+  const t = document.getElementById('checkInput').value.trim() || TOKEN;
+  if (!t) { show('checkResp', '// 没有可用 Token，请先登录'); return; }
+  try {
+    const { j, ms } = await api(BASE + '/checkToken?token=' + encodeURIComponent(t));
+    show('checkResp', fmt(j), j.code, ms);
+  } catch (e) { show('checkResp', '// 请求失败：' + e.message); }
+}
+
+/** 无效 Token 反例：固定 401 */
+async function doCheckBad() {
+  try {
+    const { j, ms } = await api(BASE + '/checkToken?token=invalid-token-for-test');
+    show('checkResp', fmt(j), j.code, ms);
+  } catch (e) { show('checkResp', '// 请求失败：' + e.message); }
+}
+
+async function doGetUser() {
+  const id = document.getElementById('uidInput').value.trim() || '1';
+  try {
+    const { j, ms } = await api(BASE + '/getUserInfo?userId=' + id);
+    show('userResp', fmt(j), j.code, ms);
+  } catch (e) { show('userResp', '// 请求失败：' + e.message); }
+}
+
+async function doAdd() {
+  if (!TOKEN) { show('addResp', '// 请先登录获取 Token（测管理员新增请用 admin）'); return; }
+  await addRequest(TOKEN, '');
+}
+
+/** 越权测试：临时登录 student1，与当前登录身份无关 */
+async function doAddDenied() {
+  try {
+    const j = await (await fetch(BASE + '/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'student1', password: '123456' })
+    })).json();
+    if (j.code !== 200) { show('addResp', '// 临时登录学生账号失败\n' + fmt(j), j.code); return; }
+    await addRequest(j.data.token, '// 本次固定使用学生 student1 身份（与当前登录无关）');
+  } catch (e) { show('addResp', '// 请求失败：' + e.message); }
+}
+
+async function addRequest(token, note) {
+  try {
+    const { j, ms } = await api(BASE + '/addUser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'token': token },
+      body: JSON.stringify({
+        username: document.getElementById('nuName').value.trim() + (Date.now() % 10000),
+        password: document.getElementById('nuPass').value || '123456',
+        name: document.getElementById('nuReal').value.trim(),
+        roleId: parseInt(document.getElementById('nuRole').value) || 1
+      })
+    });
+    show('addResp', (note ? note + '\n' : '') + fmt(j), j.code, ms);
+  } catch (e) { show('addResp', '// 请求失败：' + e.message); }
+}
+
+/* ===== 全流程演示：终端日志 ===== */
+function termHint(on) {
+  document.getElementById('demoLog').innerHTML = on ? '<span class="hint">// 正在执行…</span>' : '';
+}
+function logLine(method, path, code, note, json) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const cls = code >= 500 ? 'c5' : code === 200 ? 'c2' : 'c4';
+  const chip = code ? `<span class="code ${cls}">${code}</span>` : '';
+  document.getElementById('demoLog').insertAdjacentHTML('beforeend',
+    `<div class="tline"><span class="tt">${t}</span>${chip}<span class="lbl">${method} ${path}</span>${note ? ' <span class="hint">// ' + note + '</span>' : ''}</div>` +
+    (json ? `<details><summary>响应详情</summary><pre>${hl(json)}</pre></details>` : ''));
+}
+function clearDemo() { document.getElementById('demoLog').innerHTML = '<span class="hint">// 已清空</span>'; }
+
+async function runDemo() {
+  const btn = document.getElementById('demoBtn');
+  btn.disabled = true; btn.textContent = '执行中…';
+  termHint(true);
+  const P = (p) => '/api/auth/' + p;
+  try {
+    let j = await (await fetch(BASE + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: '123456' }) })).json();
+    const adminToken = j.data.token;
+    logLine('POST', P('login'), 200, '系统管理员登录，签发 JWT', fmt(j));
+
+    j = await (await fetch(BASE + '/checkToken?token=' + adminToken)).json();
+    logLine('GET', P('checkToken'), 200, 'Token 验签通过 → userId=' + j.data.userId + ' 角色=' + j.data.role, fmt(j));
+
+    j = await (await fetch(BASE + '/getUserInfo?userId=' + j.data.userId)).json();
+    logLine('GET', P('getUserInfo'), 200, '查询用户信息', fmt(j));
+
+    let r = await fetch(BASE + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'student1', password: '123456' }) });
+    const stuToken = (await r.json()).data.token;
+    j = await (await fetch(BASE + '/addUser', { method: 'POST', headers: { 'Content-Type': 'application/json', 'token': stuToken }, body: JSON.stringify({ username: 'hacker' + (Date.now() % 10000), password: '123456', name: '越权测试', roleId: 1 }) })).json();
+    logLine('POST', P('addUser'), j.code, '学生越权调用管理员接口 → 权限拦截生效（预期结果）', fmt(j));
+
+    const name = 'stu' + (Date.now() % 100000);
+    j = await (await fetch(BASE + '/addUser', { method: 'POST', headers: { 'Content-Type': 'application/json', 'token': adminToken }, body: JSON.stringify({ username: name, password: '123456', name: '赵六', roleId: 1 }) })).json();
+    logLine('POST', P('addUser'), 200, '管理员新增用户成功 → 新用户 id=' + j.data.userId, fmt(j));
+    logLine('DONE', '全流程 5 步执行完毕', 200, '登录 / 校验 / 查询 / 越权拦截 / 用户管理 全部正常', '');
+  } catch (e) {
+    logLine('FAIL', '-', 500, e.message + '（请确认服务已在 8081 启动）', '');
+  }
+  btn.disabled = false; btn.textContent = '重新执行';
+}
+</script>
+</body>
+</html>
