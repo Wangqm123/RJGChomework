@@ -34,16 +34,35 @@
 
 ## 三、怎么跑起来
 
+> ⚠️ **联调/演示前必做：清理上一轮的本地数据**
+> 本服务用 H2 文件库 `./data/attendancedb.mv.db`。上一轮若留下「已签到未签退」的记录，
+> 下次签到时会被"关 3"直接拦下，表现出来就是**莫名返回 400「您在该岗位已签到且未签退」**。
+> 删掉数据目录即可，启动时会按 `schema.sql` 自动重建：
+>
+> ```bash
+> cd attendance-service
+> rm -rf data          # Windows 下直接删除 data 文件夹
+> ```
+
+**推荐启动方式（已实测，中文路径下同样可用）**：
+
 ```bash
-# 1. 先启权限服务（仓库根目录）
-mvn spring-boot:run
-
-# 2. 再启岗位服务
-cd job-service && mvn spring-boot:run
-
-# 3. 最后启本服务
-cd attendance-service && mvn spring-boot:run
+# 每个服务都在自己目录下打包后运行
+mvn -DskipTests package
+java -jar target/attendance-service-1.0.0.jar
 ```
+
+三个服务的启动顺序与目录：
+
+| 顺序 | 服务 | 目录 | 端口 |
+|---|---|---|---|
+| 1 | 权限服务 | 仓库根目录 | 8081 |
+| 2 | 岗位服务 | `job-service/` | 8082 |
+| 3 | 本服务 | `attendance-service/` | 8083 |
+
+> 已知问题：项目路径含中文时 `mvn spring-boot:run` 会报 `ClassNotFoundException`
+> （spring-boot-maven-plugin 的 fork 编码问题，详见《测试与缺陷记录》BUG-03）。
+> 上面用 jar 启动即可绕开；路径改为纯英文后 `mvn spring-boot:run` 也能正常工作。
 
 启动成功后：本服务 `http://localhost:8083`，数据控制台 `http://localhost:8083/h2-console`
 （JDBC URL `jdbc:h2:file:./data/attendancedb`，用户 sa，密码空）。
@@ -221,3 +240,27 @@ attendance-service
 - **半开区间查月**：用 `[月初, 下月初)` 而不是 `BETWEEN`，不会漏掉月末最后一秒的记录；
 - **测试隔离**：单元测试用内存库 + `@Transactional` 回滚，两个外部服务用 `@MockBean` 打桩，不依赖网络；
 - **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL（注意 `data.sql` 的 `MERGE` 语法需改写）。
+
+## 十、联调验证（已执行，23/23 通过）
+
+三个服务同时在线后，可直接跑仓库内附的联调脚本，无需 Postman：
+
+```bash
+# 前置：三个服务已启动（8081 / 8082 / 8083），且已按第三节清过 data 目录
+python scripts/smoke_test.py     # 23 个场景：鉴权、未录用拦截、签到签退、金额、越权、下架岗位
+python scripts/degrade_test.py   # 降级：需先手动停掉 8082，验证「写操作拒绝、读操作可用」
+```
+
+`smoke_test.py` 在签到与签退之间等待 75 秒，是为了产生可核算的工时（签退要求满 1 分钟）。
+
+逐条结果与截图级证据见《测试与缺陷记录.md》第三节，要点：
+
+| 验证点 | 结果 |
+|---|---|
+| 登录鉴权、角色识别 | 5 类账号全部正确 |
+| 跨服务录用校验 | student2 未录用签到 → 400「您未被该岗位录用」 |
+| Token 校验（调 8081） | 无 token / 伪造 token → 401 |
+| 时薪快照 | 签到返回 hourSalary=25.0、deptId=1 |
+| 金额核算 | 1 分钟 × 25 元/时 = 0.42 元，明细与汇总一致 |
+| 权限隔离与越权 | 学生 403、部门管理员跨部门 403、中心管理员全校可查 |
+| 依赖服务降级 | 停 8082 后签到 500 且不放行，查询类接口仍 200 |
