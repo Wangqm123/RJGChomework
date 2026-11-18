@@ -103,7 +103,7 @@ mvn test
 `month` 不传默认**当月**（`settle` / `pay` 例外：**必须显式传**，避免误操作把本月账结掉），
 格式必须是 `yyyy-MM`，否则 400。
 
-两个统计字段口径不同，别混用：
+几个统计字段口径不同，别混用：
 
 - `myRecord.recordCount` = 当月**全部**记录数（含未签退、异常待确认），另有 `settledCount/pendingCount` 拆开计数；
 - `mySubsidy.recordCount` = 当月**已签退（status=1）**、真正参与计薪的记录数；
