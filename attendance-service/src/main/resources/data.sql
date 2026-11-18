@@ -1,0 +1,28 @@
+-- 预置数据说明
+--
+-- 本服务默认不预置签到记录，原因：
+--   工时数据必须和"岗位服务里的录用关系"对得上，硬编码写死容易出现
+--   "有工时记录但岗位服务查不到录用"的脏数据，演示时反而露馅。
+--
+-- 推荐造数方式（演示脚本第 4~7 步就是这么走的）：
+--   1. 权限服务登录拿 student1 的 token（userId=4）
+--   2. 岗位服务 GET /api/job/getStudentHired?jobId=1&userId=4 确认返回 true
+--      （岗位服务 data.sql 已预置：student1 被岗位 1"图书馆图书整理助理"录用，时薪 25 元）
+--   3. 调本服务 POST /api/attendance/checkIn  {"jobId":1}
+--   4. 调本服务 POST /api/attendance/checkOut {"jobId":1}
+--   5. 查 GET /api/attendance/mySubsidy?month=当本月
+--
+-- 若确实需要"开箱就有历史工时"，可手工执行下面的语句（id 已占位，注意别与自增冲突）。
+-- CURRENT_TIMESTAMP 是启动时刻，所以工时约为 3 小时，金额按 25 元/时算 = 75 元。
+--
+-- MERGE INTO t_attendance_record (id, job_id, user_id, dept_id, job_name, hour_salary,
+--        check_in_time, check_out_time, work_minutes, status, remark, create_time, update_time)
+-- KEY (id) VALUES (1, 1, 4, 1, '图书馆图书整理助理', 25.00,
+--        DATEADD('HOUR', -3, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, 180, 1, NULL,
+--        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+-- 占位语句，不要删：
+-- Spring 的 SQL 脚本执行器不允许"空脚本"，如果本文件全是注释，
+-- 剥离注释后内容为空，启动会抛 IllegalArgumentException: 'script' must not be null or empty。
+-- 这里放一条无副作用的 SELECT 1 让脚本非空（H2 和 MySQL 都支持）。
+SELECT 1;

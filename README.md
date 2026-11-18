@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|
 | 用户权限服务（auth-service） | 8081 | 仓库根目录 | 成员 3 | 已完成 | 见本文第五节、《交接说明.md》 |
 | 岗位申请与审核服务（job-service） | 8082 | `job-service/` | 成员 4 | 已完成 | [job-service/README.md](job-service/README.md) |
-| 工时考勤与补贴核算服务（attendance-service） | 8083 | 待建 | 成员 5 | 开发中 | 接口见《接口文档初稿》服务3 |
+| 工时考勤与补贴核算服务（attendance-service） | 8083 | `attendance-service/` | 成员 5 | 已完成 | [attendance-service/README.md](attendance-service/README.md) |
 
 > 说明：本仓库根目录本身就是用户权限服务工程（成员 3 建立），
 > 岗位服务是与它平级的独立 Maven 工程，放在 `job-service/` 目录下，可单独构建、单独部署。
@@ -229,5 +229,13 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 
 ## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
 
-由成员 5 负责开发，接口见《接口文档初稿》服务3（签到、签退、月度工时补贴、部门/全校汇总），
-本 README 暂不展开，完成后由成员 5 补充说明。
+概要（详细文档见 [attendance-service/README.md](attendance-service/README.md)）：
+
+- **签到**（学生）→ **签退**（自动算工时）→ **月度工时补贴核算** → **部门/全校汇总**，共 6 个接口
+- 签到走两道关：调权限服务 `checkToken` 校验身份（401 拒），再调岗位服务 `getStudentHired` 校验录用资格（false 拒），
+  都通过才允许落库；任一依赖服务不可用时返回 500 友好提示，**不放行**
+- 签到时**快照**岗位名、时薪、所属部门，历史工资按当时时薪结算，不受岗位调薪/下架影响
+- 单次工时超 12 小时自动标记「异常待确认」，核实后才计薪
+- 角色与数据隔离：学生只看本人；部门管理员只能看本部门（deptId 从权限服务取，防越权）；中心管理员看全校
+- 金额用 `BigDecimal` + 精确分钟计算，统一在 `common/CalcUtils`，「明细加总 = 汇总」
+- 单元测试 20 个（`cd attendance-service && mvn test`），覆盖未录用拦截、重复签到、异常工时、跨部门越权、依赖服务降级
