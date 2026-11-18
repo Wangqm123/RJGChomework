@@ -165,8 +165,7 @@ public class AttendanceService {
         MonthRange range = MonthRange.of(month);
 
         List<AttendanceRecord> records = recordRepository
-                .findByUserIdAndCheckInTimeBetweenOrderByCheckInTimeDesc(
-                        session.userId(), range.from(), range.to());
+                .findUserMonthRecords(session.userId(), range.from(), range.to());
 
         int settledCount = 0;
         int pendingCount = 0;

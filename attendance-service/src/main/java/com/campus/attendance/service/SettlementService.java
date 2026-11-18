@@ -73,9 +73,9 @@ public class SettlementService {
         MonthRange range = MonthRange.of(month);
 
         List<AttendanceRecord> records = (deptIdParam == null)
-                ? recordRepository.findByStatusAndCheckInTimeBetweenOrderByCheckInTimeAsc(
+                ? recordRepository.findMonthRecordsByStatus(
                         AttendanceStatus.CHECKED_OUT, range.from(), range.to())
-                : recordRepository.findByDeptIdAndStatusAndCheckInTimeBetweenOrderByCheckInTimeAsc(
+                : recordRepository.findDeptMonthRecords(
                         deptIdParam, AttendanceStatus.CHECKED_OUT, range.from(), range.to());
 
         // 按 "人 + 部门" 分组：同一个人跨部门打工时，各部门各自一张单

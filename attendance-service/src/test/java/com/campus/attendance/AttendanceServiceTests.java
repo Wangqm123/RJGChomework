@@ -278,11 +278,14 @@ class AttendanceServiceTests {
     // ==================== 我的记录 / 补贴 ====================
 
     @Test
-    @DisplayName("TC-09 我的记录按月份过滤：只返回当月数据")
+    @DisplayName("TC-09 我的记录按月份过滤：只返回当月数据（下月 1 日 00:00 的边界记录不算本月）")
     void tc09_myRecordFilterByMonth() throws Exception {
         insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMinutes(120), 120, 1);
         // 上上个月的记录不应出现在本月结果里
         insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMonths(2), 120, 1);
+        // 边界：月份区间是 [月初 00:00, 下月初 00:00)，恰好落在下月 1 日 00:00 的记录属于下月
+        insertRecord(4L, JOB_ID, DEPT_ID,
+                YearMonth.now().plusMonths(1).atDay(1).atStartOfDay(), 60, 1);
 
         mockMvc.perform(get("/api/attendance/myRecord")
                         .header("token", STUDENT_TOKEN)
@@ -411,8 +414,8 @@ class AttendanceServiceTests {
     }
 
     @Test
-    @DisplayName("TC-18 中心管理员查部门汇总未指定 deptId：400")
-    void tc18_deptSummaryByCenterWithoutDeptId() throws Exception {
+    @DisplayName("TC-23 中心管理员查部门汇总未指定 deptId：400")
+    void tc23_deptSummaryByCenterWithoutDeptId() throws Exception {
         mockMvc.perform(get("/api/attendance/deptSummary")
                         .header("token", CENTER_TOKEN)
                         .param("month", CURRENT_MONTH))

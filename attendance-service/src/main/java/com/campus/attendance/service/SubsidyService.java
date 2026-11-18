@@ -69,8 +69,7 @@ public class SubsidyService {
         MonthRange range = MonthRange.of(month);
 
         List<AttendanceRecord> records = recordRepository
-                .findByUserIdAndCheckInTimeBetweenOrderByCheckInTimeDesc(
-                        session.userId(), range.from(), range.to())
+                .findUserMonthRecords(session.userId(), range.from(), range.to())
                 .stream()
                 .filter(r -> r.getStatus() != null && r.getStatus() == AttendanceStatus.CHECKED_OUT)
                 .toList();
@@ -135,8 +134,7 @@ public class SubsidyService {
 
         MonthRange range = MonthRange.of(month);
         List<AttendanceRecord> records = recordRepository
-                .findByDeptIdAndStatusAndCheckInTimeBetweenOrderByCheckInTimeAsc(
-                        deptId, AttendanceStatus.CHECKED_OUT, range.from(), range.to());
+                .findDeptMonthRecords(deptId, AttendanceStatus.CHECKED_OUT, range.from(), range.to());
 
         Map<Long, List<AttendanceRecord>> byUser = new LinkedHashMap<>();
         for (AttendanceRecord r : records) {
@@ -181,7 +179,7 @@ public class SubsidyService {
         MonthRange range = MonthRange.of(month);
 
         List<AttendanceRecord> records = recordRepository
-                .findByStatusAndCheckInTimeBetweenOrderByCheckInTimeAsc(
+                .findMonthRecordsByStatus(
                         AttendanceStatus.CHECKED_OUT, range.from(), range.to());
 
         Map<Long, List<AttendanceRecord>> byDept = new LinkedHashMap<>();

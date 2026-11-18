@@ -67,7 +67,8 @@ java -jar target/attendance-service-1.0.0.jar
 > 上面用 jar 启动即可绕开；路径改为纯英文后 `mvn spring-boot:run` 也能正常工作。
 
 启动成功后：本服务 `http://localhost:8083`，数据控制台 `http://localhost:8083/h2-console`
-（JDBC URL `jdbc:h2:file:./data/attendancedb`，用户 sa，密码空）。
+（JDBC URL 必须与配置完全一致：`jdbc:h2:file:./data/attendancedb;MODE=MySQL;AUTO_SERVER=TRUE`，
+用户 sa，密码空；少了 `MODE/AUTO_SERVER` 两个参数会因文件锁连不上）。
 
 运行单元测试（39 个用例，使用独立内存库，不影响开发数据）：
 
@@ -89,18 +90,25 @@ mvn test
 
 | 接口 | 方式 | 说明 | 权限 | 返回 data |
 |---|---|---|---|---|
-| `/api/attendance/checkIn` | POST | 签到 `{jobId}` | 学生本人 | `{recordId, jobName, hourSalary, checkInTime, status}` |
-| `/api/attendance/checkOut` | POST | 签退 `{jobId}` | 学生本人 | `{workMinutes, workHours, amount, status, tip}` |
+| `/api/attendance/checkIn` | POST | 签到 `{jobId}` | 学生本人 | `{recordId, jobId, jobName, deptId, hourSalary, checkInTime, status, statusName}` |
+| `/api/attendance/checkOut` | POST | 签退 `{jobId}` | 学生本人 | `{recordId, jobId, checkInTime, checkOutTime, workMinutes, workHours, amount, status, statusName, tip}` |
 | `/api/attendance/myRecord` | GET | 我的记录 `?month=2026-11` | 学生本人 | `{month, recordCount, settledCount, pendingCount, totalHours, totalAmount, list}` |
-| `/api/attendance/mySubsidy` | GET | 我的月度补贴 `?month=2026-11` | 学生本人 | `{userName, month, recordCount, totalHours, totalAmount, settleStatus, settleStatusName}` |
-| `/api/attendance/deptSummary` | GET | 部门汇总 `?month=&deptId=` | 部门管理员（本部门）/ 中心管理员（需指定 deptId） | `{deptId, personCount, totalHours, totalAmount, list}` |
-| `/api/attendance/schoolSummary` | GET | 全校汇总 `?month=` | 助学中心管理员 | `{deptCount, personCount, totalHours, totalAmount, list}` |
-| `/api/attendance/settle` | POST | 月度结算 `{month, deptId?, remark?}` | 助学中心管理员 | `{month, userCount, createdCount, refreshedCount, skippedCount, totalHours, totalAmount, list}` |
-| `/api/attendance/pay` | POST | 批量发放 `{month, deptId?}` | 助学中心管理员 | `{month, paidCount, paidAmount, tip}` |
+| `/api/attendance/mySubsidy` | GET | 我的月度补贴 `?month=2026-11` | 学生本人 | `{userId, userName, month, recordCount, totalHours, totalAmount, settleStatus, settleStatusName}` |
+| `/api/attendance/deptSummary` | GET | 部门汇总 `?month=&deptId=` | 部门管理员（本部门）/ 中心管理员（需指定 deptId） | `{deptId, month, personCount, totalHours, totalAmount, list}` |
+| `/api/attendance/schoolSummary` | GET | 全校汇总 `?month=` | 助学中心管理员 | `{month, deptCount, personCount, totalHours, totalAmount, list}` |
+| `/api/attendance/settle` | POST | 月度结算 `{month, deptId?, remark?}` | 助学中心管理员 | `{month, deptId, userCount, createdCount, refreshedCount, skippedCount, totalHours, totalAmount, list}` |
+| `/api/attendance/pay` | POST | 批量发放 `{month, deptId?}` | 助学中心管理员 | `{month, deptId, paidCount, paidAmount, tip}` |
 | `/api/attendance/subsidyList` | GET | 发放单列表 `?month=&deptId=&status=` | 部门管理员（本部门）/ 中心管理员（可全校） | `[{subsidyId, userId, userName, deptId, month, recordCount, totalHours, totalAmount, status, statusName, settleTime, payTime}]` |
 
 `month` 不传默认**当月**（`settle` / `pay` 例外：**必须显式传**，避免误操作把本月账结掉），
 格式必须是 `yyyy-MM`，否则 400。
+
+两个统计字段口径不同，别混用：
+
+- `myRecord.recordCount` = 当月**全部**记录数（含未签退、异常待确认），另有 `settledCount/pendingCount` 拆开计数；
+- `mySubsidy.recordCount` = 当月**已签退（status=1）**、真正参与计薪的记录数；
+- `settle.userCount` = 结算对象数，按「人 × 部门」计：一个人在两个部门打工算 **2**（对应 2 张发放单）；
+- `settle.totalHours/totalAmount` 只累计**本次实际写入**的单，`skippedCount`（已发放、金额冻结）不计入。
 
 ### 4.1 请求示例
 
@@ -163,6 +171,10 @@ curl -X POST http://localhost:8083/api/attendance/pay \
 0 已签到未签退 → 1 已签退（计薪） / 2 异常待确认（不计薪，需人工核实）
 单次工时 > 12 小时 → 自动置为 2，remark 记录原因
 ```
+
+> 接口文档只定义了"标记异常"，没有定义"核实通过"接口，因此本服务只负责标记并把它排除在
+> 计薪之外；管理员核实后由运维直接修正该条记录状态（2 → 1），再重新结算即可。
+> 这是当前范围外的已知留白，答辩被问到时按此口径回答，不要说"系统会自动确认"。
 
 ### 5.3 核算口径（答辩口径以此为准）
 
@@ -300,9 +312,14 @@ attendance-service
   并发结算由唯一键兜底，冲突时整体回滚并提示重试，不会出现两张单重复发钱。
 - **发放幂等**：用条件更新 `UPDATE ... WHERE status=0`，只有仍为待发放的才改成已发放，
   按影响行数统计发放人数——两个管理员同时点发放，第二次影响 0 行，不会重复计数，也不需要悲观锁。
-- **半开区间查月**：用 `[月初, 下月初)` 而不是 `BETWEEN`，不会漏掉月末最后一秒的记录；
+- **半开区间查月**：用 `[月初, 下月初)` 而不是 `BETWEEN`——JPQL 里显式写 `>= :from AND < :to`
+  （派生查询的 `Between` 生成的是两端闭合的 SQL，恰好落在下月 1 日 00:00 的记录会被两个月重复统计），
+  既不会漏掉月末最后一秒，也不会把下月第一刻算进本月；
 - **测试隔离**：单元测试用内存库 + `@Transactional` 回滚，两个外部服务用 `@MockBean` 打桩，不依赖网络；
-- **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL（注意 `data.sql` 的 `MERGE` 语法需改写）。
+- **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL。
+  本服务 `data.sql` 只有一条 `SELECT 1;` 占位（不预置业务数据），可直接在 MySQL 执行；
+  切库前唯一要处理的是 `schema.sql` 里 3 行 H2 专有的 `CREATE INDEX IF NOT EXISTS`，
+  注释掉后启动，再手工 `ALTER TABLE ... ADD INDEX` 建索引（详见 `application-mysql.yml` 顶部说明）。
 
 ## 十、联调验证（已执行，33/33 通过）
 
