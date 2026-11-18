@@ -2,6 +2,7 @@ package com.campus.attendance.repository;
 
 import com.campus.attendance.entity.AttendanceRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -50,4 +51,22 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
     List<AttendanceRecord> findMonthRecordsByStatus(@Param("status") Integer status,
                                                     @Param("from") LocalDateTime from,
                                                     @Param("to") LocalDateTime to);
+
+    /**
+     * 异常核实：只有仍处于「异常待确认（status=2）」时才允许改，返回影响行数。
+     *
+     * 为什么用条件更新而不是"读出来改字段再 save"：两个管理员同时点核实时，
+     * 两边都读到 status=2，各自写一次，后写的会覆盖先写的结论（通过/不通过互相打架）。
+     * 带 `AND status = 2` 的 UPDATE 是原子的，第二次影响 0 行，调用方据此提示"已被他人核实"，
+     * 与发放接口用的是同一套思路，不需要悲观锁。
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AttendanceRecord r SET r.status = :newStatus, r.remark = :remark, "
+            + "r.confirmOperatorId = :operatorId, r.confirmTime = :confirmTime, r.updateTime = :confirmTime "
+            + "WHERE r.id = :id AND r.status = 2")
+    int markConfirmed(@Param("id") Long id,
+                      @Param("newStatus") Integer newStatus,
+                      @Param("remark") String remark,
+                      @Param("operatorId") Long operatorId,
+                      @Param("confirmTime") LocalDateTime confirmTime);
 }

@@ -272,14 +272,18 @@ public class AttendanceService {
         }
 
         boolean accept = Boolean.TRUE.equals(pass);
+        int target = accept ? AttendanceStatus.CHECKED_OUT : AttendanceStatus.REJECTED;
         String note = (remark == null || remark.isBlank()) ? "" : "：" + remark.trim();
+        String newRemark = (accept ? "异常核实通过，已计入补贴" : "异常核实不通过，不计薪") + note;
         LocalDateTime confirmTime = LocalDateTime.now();
-        record.setStatus(accept ? AttendanceStatus.CHECKED_OUT : AttendanceStatus.REJECTED);
-        record.setRemark((accept ? "异常核实通过，已计入补贴" : "异常核实不通过，不计薪") + note);
-        // 留痕：谁在什么时候核实（这张表只有核实是管理员动作，其它字段都由学生产生）
-        record.setConfirmOperatorId(session.userId());
-        record.setConfirmTime(confirmTime);
-        recordRepository.save(record);
+
+        // 条件更新兜底并发：两个管理员同时点核实时，只有第一个能把 status=2 改掉，
+        // 第二个影响 0 行 → 400，不会出现"后点的把先点的结论覆盖掉"
+        int affected = recordRepository.markConfirmed(
+                recordId, target, newRemark, session.userId(), confirmTime);
+        if (affected == 0) {
+            throw new BusinessException(400, "该记录已被其他管理员核实，请刷新后查看最新状态");
+        }
 
         BigDecimal amount = accept
                 ? CalcUtils.amount(record.getWorkMinutes(), record.getHourSalary())
@@ -293,8 +297,8 @@ public class AttendanceService {
                 record.getUserId(),
                 record.getJobId(),
                 record.getDeptId(),
-                record.getStatus(),
-                AttendanceStatus.nameOf(record.getStatus()),
+                target,
+                AttendanceStatus.nameOf(target),
                 record.getWorkMinutes(),
                 amount,
                 session.userId(),
