@@ -57,12 +57,23 @@ public class AttendanceRecord {
     @Column(name = "work_minutes")
     private Integer workMinutes;
 
-    /** 0 已签到未签退 / 1 已签退 / 2 异常待确认（见 AttendanceStatus） */
+    /** 0 已签到未签退 / 1 已签退 / 2 异常待确认 / 3 核实不通过（见 AttendanceStatus） */
     @Column(name = "status", nullable = false)
     private Integer status;
 
     @Column(name = "remark", length = 200)
     private String remark;
+
+    /**
+     * 异常核实的操作人（userId）与核实时间。
+     * 只有 status=2 的记录被核实（→1 或 →3）时才有值，正常签退的记录为空。
+     * 这张表里绝大多数字段是学生自己产生的，只有核实是管理员动作，所以单独留痕，便于追责与答辩说明。
+     */
+    @Column(name = "confirm_operator_id")
+    private Long confirmOperatorId;
+
+    @Column(name = "confirm_time")
+    private LocalDateTime confirmTime;
 
     /**
      * 并发签到的排他键：未签退时 = "userId:jobId"，签退后置 null。
@@ -182,6 +193,22 @@ public class AttendanceRecord {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public Long getConfirmOperatorId() {
+        return confirmOperatorId;
+    }
+
+    public void setConfirmOperatorId(Long confirmOperatorId) {
+        this.confirmOperatorId = confirmOperatorId;
+    }
+
+    public LocalDateTime getConfirmTime() {
+        return confirmTime;
+    }
+
+    public void setConfirmTime(LocalDateTime confirmTime) {
+        this.confirmTime = confirmTime;
     }
 
     public String getActiveKey() {

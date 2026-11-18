@@ -118,6 +118,10 @@ class AttendanceServiceTests {
             if (jobId != null && jobId == JOB_ID) {
                 return new JobClient.JobInfo(JOB_ID, "图书馆图书整理助理", SALARY, DEPT_ID, 2);
             }
+            // 岗位 2：岗位存在但上游没给部门（deptId=0），用于验证"不落部门 0 的脏记录"
+            if (jobId != null && jobId == 2L) {
+                return new JobClient.JobInfo(2L, "缺少部门的岗位", SALARY, 0L, 2);
+            }
             throw new BusinessException(400, "岗位不存在");
         });
         when(jobClient.isStudentHired(anyLong(), anyLong())).thenAnswer(inv -> {
@@ -436,14 +440,166 @@ class AttendanceServiceTests {
                 .andExpect(jsonPath("$.data.totalAmount").value(0.00));
     }
 
+    @Test
+    @DisplayName("TC-40 我的记录分页：明细只给当前页，合计按整月算不随翻页变化")
+    void tc40_myRecordPaging() throws Exception {
+        insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMinutes(500), 100, 1);
+        insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMinutes(400), 100, 1);
+        insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMinutes(300), 100, 1);
+
+        // 第 1 页取 2 条：整月仍是 3 条 / 300 分钟 / 125.01 元
+        // 注意 125.01 而不是 125.00：每条 100 分钟先四舍五入成 41.67，再累加 3 条 = 125.01。
+        // 系统口径是"明细加总 = 汇总"，所以按条四舍五入后累加，与"总分钟一次性算"可能差 1 分。
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT_TOKEN)
+                        .param("month", CURRENT_MONTH)
+                        .param("page", "1")
+                        .param("size", "2"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.recordCount").value(3))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(2))
+                .andExpect(jsonPath("$.data.totalPages").value(2))
+                .andExpect(jsonPath("$.data.list.length()").value(2))
+                .andExpect(jsonPath("$.data.totalAmount").value(125.01));
+
+        // 第 2 页只剩 1 条，合计金额不变（不会因为翻页变小）
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT_TOKEN)
+                        .param("month", CURRENT_MONTH)
+                        .param("page", "2")
+                        .param("size", "2"))
+                .andExpect(jsonPath("$.data.page").value(2))
+                .andExpect(jsonPath("$.data.list.length()").value(1))
+                .andExpect(jsonPath("$.data.totalAmount").value(125.01));
+
+        // 非法分页参数：400
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT_TOKEN)
+                        .param("month", CURRENT_MONTH)
+                        .param("size", "0"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("每页条数 size 必须在 1~100 之间"));
+    }
+
+    // ==================== 异常工时核实 ====================
+
+    @Test
+    @DisplayName("TC-41 中心管理员核实异常工时通过：status 2→1，金额计入补贴")
+    void tc41_confirmAbnormalPass() throws Exception {
+        AttendanceRecord abnormal = insertRecord(
+                4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusHours(13), 780, 2);
+
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", CENTER_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":" + abnormal.getId()
+                                + ",\"pass\":true,\"remark\":\"当班值守，部门已确认\"}"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.status").value(AttendanceStatus.CHECKED_OUT))
+                .andExpect(jsonPath("$.data.statusName").value("已签退"))
+                .andExpect(jsonPath("$.data.amount").value(325.00))
+                .andExpect(jsonPath("$.data.confirmOperatorId").value(3))
+                .andExpect(jsonPath("$.data.confirmTime").exists())
+                .andExpect(jsonPath("$.data.tip").exists());
+
+        // 核实通过后这条工时立刻进入月度补贴（780 分钟 × 25 元/时 = 325.00）
+        mockMvc.perform(get("/api/attendance/mySubsidy")
+                        .header("token", STUDENT_TOKEN)
+                        .param("month", CURRENT_MONTH))
+                .andExpect(jsonPath("$.data.recordCount").value(1))
+                .andExpect(jsonPath("$.data.totalAmount").value(325.00));
+
+        // 已核实的记录不允许反复改结论：再调一次 400
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", CENTER_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":" + abnormal.getId() + ",\"pass\":false}"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("只有「异常待确认」的记录需要核实，当前状态：已签退"));
+    }
+
+    @Test
+    @DisplayName("TC-42 部门管理员核实不通过：status 2→3，不计薪且不再算作待确认")
+    void tc42_confirmAbnormalReject() throws Exception {
+        AttendanceRecord abnormal = insertRecord(
+                4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusHours(14), 840, 2);
+
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", DEPT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":" + abnormal.getId()
+                                + ",\"pass\":false,\"remark\":\"当天未实际到岗\"}"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.status").value(AttendanceStatus.REJECTED))
+                .andExpect(jsonPath("$.data.statusName").value("核实不通过"))
+                .andExpect(jsonPath("$.data.amount").value(0.00))
+                .andExpect(jsonPath("$.data.confirmOperatorId").value(2));
+
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT_TOKEN)
+                        .param("month", CURRENT_MONTH))
+                .andExpect(jsonPath("$.data.recordCount").value(1))
+                .andExpect(jsonPath("$.data.rejectedCount").value(1))
+                .andExpect(jsonPath("$.data.pendingCount").value(0))
+                .andExpect(jsonPath("$.data.totalAmount").value(0.00));
+    }
+
+    @Test
+    @DisplayName("TC-43 部门管理员核实其他部门的记录：403")
+    void tc43_confirmOtherDeptForbidden() throws Exception {
+        AttendanceRecord otherDept = insertRecord(
+                9L, 2L, 2L, LocalDateTime.now().minusHours(13), 780, 2);
+
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", DEPT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":" + otherDept.getId() + ",\"pass\":true}"))
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.msg").value("权限不足：只能核实本部门的工时记录"));
+    }
+
+    @Test
+    @DisplayName("TC-44 学生调异常核实接口：403；核实不存在的记录：400")
+    void tc44_confirmByStudentAndMissingRecord() throws Exception {
+        AttendanceRecord abnormal = insertRecord(
+                4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusHours(13), 780, 2);
+
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":" + abnormal.getId() + ",\"pass\":true}"))
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(post("/api/attendance/confirmAbnormal")
+                        .header("token", CENTER_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recordId\":99999,\"pass\":true}"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("签到记录不存在：recordId=99999"));
+    }
+
+    @Test
+    @DisplayName("TC-45 岗位缺 deptId 时拒绝签到：500 且不落部门 0 的脏记录")
+    void tc45_checkInWithoutDeptId() throws Exception {
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":2}"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.msg").value("岗位数据异常：未取到所属部门，暂不能签到，请联系管理员"));
+
+        org.assertj.core.api.Assertions.assertThat(recordRepository.count()).isZero();
+    }
+
     // ==================== 测试辅助 ====================
 
     /**
      * 直接插一条签到记录（模拟历史数据），避免测试用例依赖"先签到再签退"的时序。
-     * workMinutes 传 null 表示尚未签退。
+     * workMinutes 传 null 表示尚未签退；返回落库后的实体（核实类用例需要 recordId）。
      */
-    private void insertRecord(Long userId, Long jobId, Long deptId,
-                              LocalDateTime checkInTime, Integer workMinutes, int status) {
+    private AttendanceRecord insertRecord(Long userId, Long jobId, Long deptId,
+                                          LocalDateTime checkInTime, Integer workMinutes, int status) {
         AttendanceRecord r = new AttendanceRecord();
         r.setUserId(userId);
         r.setJobId(jobId);
@@ -456,6 +612,6 @@ class AttendanceServiceTests {
         }
         r.setWorkMinutes(workMinutes);
         r.setStatus(status);
-        recordRepository.save(r);
+        return recordRepository.save(r);
     }
 }

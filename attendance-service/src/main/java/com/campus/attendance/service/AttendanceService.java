@@ -9,6 +9,7 @@ import com.campus.attendance.common.MonthRange;
 import com.campus.attendance.common.Roles;
 import com.campus.attendance.dto.CheckInResult;
 import com.campus.attendance.dto.CheckOutResult;
+import com.campus.attendance.dto.ConfirmResult;
 import com.campus.attendance.dto.MyRecordView;
 import com.campus.attendance.dto.RecordView;
 import com.campus.attendance.entity.AttendanceRecord;
@@ -39,6 +40,10 @@ public class AttendanceService {
     /** 岗位已下架（与岗位服务 JobStatus 字典一致），下架岗位不能继续签到 */
     private static final int JOB_OFFLINE = 5;
 
+    /** "我的记录"默认每页条数与上限：不传就按 20 条/页，防止一次拉出整月几百条把前端拖死 */
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final AttendanceRecordRepository recordRepository;
     private final AuthGuard authGuard;
     private final JobClient jobClient;
@@ -64,6 +69,16 @@ public class AttendanceService {
         JobClient.JobInfo job = jobClient.getJob(jobId);
         if (job.status() != null && job.status() == JOB_OFFLINE) {
             throw new BusinessException(400, "岗位已下架，无法签到");
+        }
+
+        // 关 1.5：岗位数据必须完整。deptId/hourSalary 是快照的来源，缺了会写出"部门 0、时薪 0"的
+        // 脏记录（既不进任何部门汇总，也会把工时算成 0 元），宁可签到失败也不落这种数据。
+        // 这是上游数据异常，按 500 处理（不是学生的错，提示联系管理员）。
+        if (job.deptId() == null || job.deptId() <= 0) {
+            throw new BusinessException(500, "岗位数据异常：未取到所属部门，暂不能签到，请联系管理员");
+        }
+        if (job.hourSalary() == null) {
+            throw new BusinessException(500, "岗位数据异常：未取到时薪，暂不能签到，请联系管理员");
         }
 
         // 关 2：必须被该岗位录用（跨服务校验，本服务不保存录用关系）
@@ -156,39 +171,134 @@ public class AttendanceService {
     }
 
     /**
-     * 我的签到记录（按月）。
-     * 合计只算已签退的记录，未签退/异常待确认单独给数量，避免学生误以为已经算钱。
+     * 我的签到记录（按月，支持分页）。
+     *
+     * 合计只算已签退的记录，未签退/异常待确认/核实不通过分别给数量，避免学生误以为已经算钱。
+     * page/size 不传时默认第 1 页、20 条/页。
+     *
+     * 为什么在内存里切页而不是 SQL 分页：合计必须基于整月全量数据（否则第 2 页的金额会变小），
+     * 一次查询拿到整月记录既省一次往返，也保证"明细翻页、合计不变"；单月记录量在几十条量级，
+     * 内存开销可忽略。若将来单月记录上万，再拆成"统计查询 + 分页查询"两条 SQL。
      */
     @Transactional(readOnly = true)
-    public MyRecordView myRecord(String token, String month) {
+    public MyRecordView myRecord(String token, String month, Integer page, Integer size) {
         AuthClient.Session session = authGuard.requireRole(token, Roles.STUDENT);
         MonthRange range = MonthRange.of(month);
+
+        int pageNo = (page == null) ? 1 : page;
+        int pageSize = (size == null) ? DEFAULT_PAGE_SIZE : size;
+        if (pageNo < 1) {
+            throw new BusinessException(400, "页码 page 必须大于 0");
+        }
+        if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+            throw new BusinessException(400, "每页条数 size 必须在 1~" + MAX_PAGE_SIZE + " 之间");
+        }
 
         List<AttendanceRecord> records = recordRepository
                 .findUserMonthRecords(session.userId(), range.from(), range.to());
 
         int settledCount = 0;
         int pendingCount = 0;
+        int rejectedCount = 0;
         int settledMinutes = 0;
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (AttendanceRecord r : records) {
-            if (r.getStatus() != null && r.getStatus() == AttendanceStatus.CHECKED_OUT) {
+            int status = (r.getStatus() == null ? AttendanceStatus.CHECKED_IN : r.getStatus());
+            if (status == AttendanceStatus.CHECKED_OUT) {
                 settledCount++;
                 settledMinutes += (r.getWorkMinutes() == null ? 0 : r.getWorkMinutes());
                 totalAmount = totalAmount.add(CalcUtils.amount(r.getWorkMinutes(), r.getHourSalary()));
+            } else if (status == AttendanceStatus.REJECTED) {
+                rejectedCount++;
             } else {
                 pendingCount++;
             }
         }
 
-        List<RecordView> views = records.stream().map(RecordView::from).toList();
+        int total = records.size();
+        int totalPages = (total + pageSize - 1) / pageSize;
+        // 用 long 算偏移：page 传个很大的数时不会 int 溢出成负数
+        int fromIndex = (int) Math.min((long) (pageNo - 1) * pageSize, total);
+        int toIndex = Math.min(fromIndex + pageSize, total);
+        List<RecordView> views = records.subList(fromIndex, toIndex).stream()
+                .map(RecordView::from)
+                .toList();
+
         return new MyRecordView(
                 range.month(),
-                records.size(),
+                total,
                 settledCount,
                 pendingCount,
+                rejectedCount,
                 CalcUtils.workHours(settledMinutes),
                 CalcUtils.money(totalAmount),
+                pageNo,
+                pageSize,
+                totalPages,
                 views);
+    }
+
+    /**
+     * 异常工时核实（部门管理员核实本部门 / 助学中心管理员核实全校）。
+     *
+     * 背景：签退时单次工时超过 12 小时会被标记为「异常待确认」并排除在计薪之外，
+     * 但必须有人能把它"落定"，否则这条记录永远悬着、学生永远拿不到钱。
+     *
+     * pass=true  → status 1（已签退），这条工时进入补贴与结算；
+     * pass=false → status 3（核实不通过），不计薪，但记录保留可追溯，不物理删除。
+     *
+     * 已核实的记录再调一次直接 400：核实是留痕动作，不允许反复改结论（要改只能走人工修数）。
+     */
+    @Transactional
+    public ConfirmResult confirmAbnormal(String token, Long recordId, Boolean pass, String remark) {
+        AuthClient.Session session = authGuard.requireAnyRole(
+                token, Roles.DEPT_ADMIN, Roles.CENTER_ADMIN);
+
+        AttendanceRecord record = recordRepository.findById(recordId)
+                .orElseThrow(() -> new BusinessException(400, "签到记录不存在：recordId=" + recordId));
+
+        // 部门管理员只能核实自己部门的记录；中心管理员不限制部门
+        if (session.roleId() == Roles.DEPT_ADMIN) {
+            Long ownDeptId = authGuard.requireDeptAdmin(session).deptId();
+            if (!ownDeptId.equals(record.getDeptId())) {
+                throw new BusinessException(403, "权限不足：只能核实本部门的工时记录");
+            }
+        }
+
+        Integer current = record.getStatus();
+        if (current == null || current != AttendanceStatus.ABNORMAL) {
+            throw new BusinessException(400, "只有「异常待确认」的记录需要核实，当前状态："
+                    + AttendanceStatus.nameOf(current));
+        }
+
+        boolean accept = Boolean.TRUE.equals(pass);
+        String note = (remark == null || remark.isBlank()) ? "" : "：" + remark.trim();
+        LocalDateTime confirmTime = LocalDateTime.now();
+        record.setStatus(accept ? AttendanceStatus.CHECKED_OUT : AttendanceStatus.REJECTED);
+        record.setRemark((accept ? "异常核实通过，已计入补贴" : "异常核实不通过，不计薪") + note);
+        // 留痕：谁在什么时候核实（这张表只有核实是管理员动作，其它字段都由学生产生）
+        record.setConfirmOperatorId(session.userId());
+        record.setConfirmTime(confirmTime);
+        recordRepository.save(record);
+
+        BigDecimal amount = accept
+                ? CalcUtils.amount(record.getWorkMinutes(), record.getHourSalary())
+                : CalcUtils.money(BigDecimal.ZERO);
+        String tip = accept
+                ? "已计入补贴；若该月已结算，请重新结算一次以刷新待发放单金额"
+                : "已标记为核实不通过，不计薪；记录保留，可追溯谁在何时核实";
+
+        return new ConfirmResult(
+                record.getId(),
+                record.getUserId(),
+                record.getJobId(),
+                record.getDeptId(),
+                record.getStatus(),
+                AttendanceStatus.nameOf(record.getStatus()),
+                record.getWorkMinutes(),
+                amount,
+                session.userId(),
+                confirmTime,
+                tip);
     }
 }

@@ -7,12 +7,17 @@
 #
 # ⚠ 切库前必看（与 job-service 的差异）：
 #   1. data.sql 本服务没有业务数据（只有一条 SELECT 1 占位），MySQL 可直接执行，无需改写 MERGE 语法；
-#   2. schema.sql 里的三行 `CREATE INDEX IF NOT EXISTS` 是 H2/PostgreSQL 语法，MySQL 不支持，
+#   2. schema.sql 里的 5 条 `CREATE INDEX IF NOT EXISTS` 是 H2/PostgreSQL 语法，MySQL 不支持，
 #      切库前请先注释掉，建库后手工执行：
 #        ALTER TABLE t_attendance_record ADD INDEX idx_att_user_time (user_id, check_in_time);
 #        ALTER TABLE t_attendance_record ADD INDEX idx_att_dept_time (dept_id, check_in_time);
 #        ALTER TABLE t_attendance_record ADD INDEX idx_att_status (status);
-#   3. 并发防线 uk_att_active 唯一约束写在建表语句内，MySQL 直接支持，不需要额外处理。
+#        ALTER TABLE t_subsidy ADD INDEX idx_subsidy_month_dept (settle_month, dept_id);
+#        ALTER TABLE t_subsidy ADD INDEX idx_subsidy_month_status (settle_month, status);
+#   3. 两个唯一约束（uk_att_active 并发防重、uk_subsidy_user_dept_month 结算幂等）写在建表语句内，
+#      MySQL 直接支持，不需要额外处理。
+#   4. 旧版本（无 confirm_operator_id/confirm_time 两列）的库不要直接升级，删掉 data 目录重建即可
+#      （本服务不存业务主数据，签到记录可重新产生）。
 spring:
   datasource:
     url: jdbc:mysql://localhost:3306/campus_attendance?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai

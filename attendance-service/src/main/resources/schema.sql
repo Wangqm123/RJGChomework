@@ -1,5 +1,7 @@
--- 建表脚本（H2 兼容 MySQL 语法；切换 MySQL 时此文件可直接使用）
--- 注意：data.sql 使用 H2 的 MERGE 语法，切换 MySQL 时需改写为 INSERT ... ON DUPLICATE KEY UPDATE
+-- 建表脚本（H2 兼容 MySQL 语法）。切换 MySQL 只有两处差异：
+--   1. 本文件中的 `CREATE INDEX IF NOT EXISTS` 是 H2 语法，MySQL 需注释掉后手工建索引（见文件末尾）；
+--   2. data.sql 只有一条 `SELECT 1;` 占位、没有任何业务数据，因此 MySQL 可直接执行，
+--      不存在 job-service 那种 MERGE 语法要改写的问题。
 
 -- 签到记录表：一条记录代表"一次签到到签退"
 CREATE TABLE IF NOT EXISTS t_attendance_record (
@@ -16,9 +18,13 @@ CREATE TABLE IF NOT EXISTS t_attendance_record (
     check_in_time  TIMESTAMP     NOT NULL,
     check_out_time TIMESTAMP,
     work_minutes   INT,
-    -- 0 已签到未签退 / 1 已签退 / 2 异常待确认（如单次工时超 12 小时）
+    -- 0 已签到未签退 / 1 已签退（计薪） / 2 异常待确认（如单次工时超 12 小时） / 3 核实不通过（不计薪，留痕）
     status         INT           NOT NULL,
     remark         VARCHAR(200),
+    -- 异常核实留痕：谁在什么时候核实的（正常签退的记录这两列为空）
+    -- 只记「核实人」不记「修改人」：本表其它字段由学生自己操作，只有核实是管理员动作，需要审计
+    confirm_operator_id BIGINT,
+    confirm_time        TIMESTAMP,
     -- 并发签到排他键：未签退 = "userId:jobId"，签退后置 NULL（多个 NULL 不参与唯一性判断）
     active_key     VARCHAR(64),
     create_time    TIMESTAMP,
@@ -30,8 +36,8 @@ CREATE TABLE IF NOT EXISTS t_attendance_record (
 );
 
 -- 以下索引用于"我的记录 / 按月汇总 / 定位未签退记录"的查询加速。
--- ⚠ 仅 H2 支持 CREATE INDEX IF NOT EXISTS；切换 MySQL 时请注释掉这三行，
---   首次建库后手工执行等价的 ALTER TABLE ... ADD INDEX（重复执行不会自动跳过）。
+-- ⚠ 仅 H2 支持 CREATE INDEX IF NOT EXISTS；切换 MySQL 时请注释掉这 3 行，
+--   建库后按 application-mysql.yml 顶部的说明手工执行等价的 ALTER TABLE ... ADD INDEX。
 CREATE INDEX IF NOT EXISTS idx_att_user_time ON t_attendance_record (user_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_dept_time ON t_attendance_record (dept_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_status    ON t_attendance_record (status);
@@ -69,6 +75,16 @@ CREATE TABLE IF NOT EXISTS t_subsidy (
     CONSTRAINT uk_subsidy_user_dept_month UNIQUE (user_id, dept_id, settle_month)
 );
 
--- 按月 + 部门对账、按状态找待发放单时用（⚠ MySQL 需去掉 IF NOT EXISTS，见文件末尾说明）
+-- 按月 + 部门对账、按状态找待发放单时用（⚠ MySQL 需去掉 IF NOT EXISTS，见 application-mysql.yml）
 CREATE INDEX IF NOT EXISTS idx_subsidy_month_dept ON t_subsidy (settle_month, dept_id);
 CREATE INDEX IF NOT EXISTS idx_subsidy_month_status ON t_subsidy (settle_month, status);
+
+-- ============================================================
+-- 切换 MySQL 时需要手工建索引（MySQL 不支持 CREATE INDEX IF NOT EXISTS）：
+--   ALTER TABLE t_attendance_record ADD INDEX idx_att_user_time (user_id, check_in_time);
+--   ALTER TABLE t_attendance_record ADD INDEX idx_att_dept_time (dept_id, check_in_time);
+--   ALTER TABLE t_attendance_record ADD INDEX idx_att_status (status);
+--   ALTER TABLE t_subsidy ADD INDEX idx_subsidy_month_dept (settle_month, dept_id);
+--   ALTER TABLE t_subsidy ADD INDEX idx_subsidy_month_status (settle_month, status);
+-- 建表语句里的两个 UNIQUE 约束（uk_att_active、uk_subsidy_user_dept_month）在 MySQL 直接生效，无需额外处理。
+-- ============================================================

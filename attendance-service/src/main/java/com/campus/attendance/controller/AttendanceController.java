@@ -5,6 +5,8 @@ import com.campus.attendance.dto.CheckInRequest;
 import com.campus.attendance.dto.CheckInResult;
 import com.campus.attendance.dto.CheckOutRequest;
 import com.campus.attendance.dto.CheckOutResult;
+import com.campus.attendance.dto.ConfirmRequest;
+import com.campus.attendance.dto.ConfirmResult;
 import com.campus.attendance.dto.DeptSummaryView;
 import com.campus.attendance.dto.MonthSubsidyView;
 import com.campus.attendance.dto.MyRecordView;
@@ -77,15 +79,36 @@ public class AttendanceController {
     }
 
     /**
+     * POST /api/attendance/confirmAbnormal 异常工时核实（部门管理员核实本部门 / 中心管理员核实全校）
+     * 请求体：{ recordId, pass: true|false, remark?: "..." }
+     *   pass=true  → 计入补贴（status 2 → 1）
+     *   pass=false → 核实不通过、不计薪（status 2 → 3，记录保留）
+     * 返回 data：{ recordId, userId, jobId, deptId, status, statusName, workMinutes, amount,
+     *             confirmOperatorId, confirmTime, tip }
+     */
+    @PostMapping("/confirmAbnormal")
+    public ApiResponse<ConfirmResult> confirmAbnormal(
+            @RequestHeader(value = "token", required = false) String token,
+            @Valid @RequestBody ConfirmRequest req) {
+        return ApiResponse.ok(attendanceService.confirmAbnormal(
+                token, req.recordId(), req.pass(), req.remark()));
+    }
+
+    /**
      * GET /api/attendance/myRecord 我的签到记录 + 当月合计（学生本人）
-     * 请求参数：month（yyyy-MM，不传默认当月）
-     * 返回 data：{ month, recordCount, settledCount, pendingCount, totalHours, totalAmount, list }
+     * 请求参数：month（yyyy-MM，不传默认当月）、page（默认 1）、size（默认 20，最大 100）
+     * 返回 data：{ month, recordCount, settledCount, pendingCount, rejectedCount,
+     *             totalHours, totalAmount, page, size, totalPages, list }
+     *
+     * 合计基于整月全量，翻页不变；list 只返回当前页。
      */
     @GetMapping("/myRecord")
     public ApiResponse<MyRecordView> myRecord(
             @RequestHeader(value = "token", required = false) String token,
-            @RequestParam(value = "month", required = false) String month) {
-        return ApiResponse.ok(attendanceService.myRecord(token, month));
+            @RequestParam(value = "month", required = false) String month,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
+        return ApiResponse.ok(attendanceService.myRecord(token, month, page, size));
     }
 
     /**

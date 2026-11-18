@@ -1,7 +1,7 @@
 """三服务联调冒烟：auth 8081 / job 8082 / attendance 8083
 
 覆盖：登录鉴权、跨服务录用校验、签到签退、金额核算、权限隔离、越权拦截、
-      月度结算（生成发放单）、批量发放与幂等。
+      月度结算（生成发放单）、批量发放与幂等、我的记录分页、异常工时核实的权限校验。
 口令用拼接构造，避免明文落在脚本里。
 """
 import json
@@ -141,6 +141,20 @@ rec2 = body.get("data") or {}
 check("S6-3", "数据隔离：student2 看不到别人记录", body.get("code") == 200 and rec2.get("recordCount") == 0,
       "code=%s count=%s" % (body.get("code"), rec2.get("recordCount")))
 
+status, body = call("GET", ATT + "/api/attendance/myRecord?month=" + MONTH + "&page=1&size=1", token=stu1)
+p = body.get("data") or {}
+ok = (body.get("code") == 200 and p.get("page") == 1 and p.get("size") == 1
+      and p.get("totalPages") == 1 and len(p.get("list") or []) == 1
+      and Decimal(str(p.get("totalAmount", "0"))) == amount_out)
+check("S6-4", "我的记录分页（page/size 回显，合计仍是整月）", ok,
+      "code=%s page=%s size=%s totalPages=%s listLen=%s amount=%s" % (
+          body.get("code"), p.get("page"), p.get("size"), p.get("totalPages"),
+          len(p.get("list") or []), p.get("totalAmount")))
+
+status, body = call("GET", ATT + "/api/attendance/myRecord?month=" + MONTH + "&size=0", token=stu1)
+check("S6-5", "分页参数非法（size=0）被拒", body.get("code") == 400,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
 # ---------- 场景 7：汇总与越权 ----------
 status, body = call("GET", ATT + "/api/attendance/deptSummary", token=depta)
 d1 = body.get("data") or {}
@@ -249,6 +263,18 @@ check("S9-9", "学生看到补贴已发放", body.get("code") == 200 and sub2.ge
 status, body = call("POST", ATT + "/api/attendance/settle", token=center, body={})
 check("S9-10", "结算不传月份被拒", body.get("code") == 400,
       "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+# ---------- 场景 10：异常工时核实（正常记录不可核实，学生无权核实） ----------
+status, body = call("POST", ATT + "/api/attendance/confirmAbnormal", token=stu1,
+                    body={"recordId": record_id, "pass": True})
+check("S10-1", "学生无权核实异常工时", body.get("code") == 403,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+status, body = call("POST", ATT + "/api/attendance/confirmAbnormal", token=center,
+                    body={"recordId": record_id, "pass": True})
+msg = str(body.get("msg"))
+check("S10-2", "已签退记录不可再核实", body.get("code") == 400 and "异常待确认" in msg,
+      "code=%s msg=%s" % (body.get("code"), msg))
 
 # ---------- 汇总 ----------
 print("\n================ 汇总 ================")
