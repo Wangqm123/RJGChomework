@@ -24,6 +24,7 @@ import java.time.YearMonth;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -187,8 +188,8 @@ class AttendanceServiceTests {
     }
 
     @Test
-    @DisplayName("TC-19 岗位不存在：透传岗位服务的 400 提示")
-    void tc19_checkInJobNotFound() throws Exception {
+    @DisplayName("TC-22 岗位不存在：透传岗位服务的 400 提示（补充用例）")
+    void tc22_checkInJobNotFound() throws Exception {
         mockMvc.perform(post("/api/attendance/checkIn")
                         .header("token", STUDENT_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -198,8 +199,8 @@ class AttendanceServiceTests {
     }
 
     @Test
-    @DisplayName("TC-20 岗位服务不可用：500 友好提示，不放行签到")
-    void tc20_jobServiceDown() throws Exception {
+    @DisplayName("TC-19 岗位服务不可用：500 友好提示，不放行签到")
+    void tc19_jobServiceDown() throws Exception {
         when(jobClient.isStudentHired(eq(JOB_ID), eq(5L)))
                 .thenThrow(new BusinessException(500, "岗位服务暂不可用（未启动或网络不通），请稍后重试"));
 
@@ -209,6 +210,25 @@ class AttendanceServiceTests {
                         .content("{\"jobId\":1}"))
                 .andExpect(jsonPath("$.code").value(500))
                 .andExpect(jsonPath("$.msg").value("岗位服务暂不可用（未启动或网络不通），请稍后重试"));
+    }
+
+    @Test
+    @DisplayName("TC-18 权限服务不可用：500 友好提示，不误判为未登录")
+    void tc18_authServiceDown() throws Exception {
+        // AuthClient 内部已把 RestClientException 转成 500「权限服务暂不可用」；
+        // 这里打桩直接给出转换后的结果，验证服务层把它原样透传、不会误当 401 处理。
+        // （真实网络故障的转换链路由集成测试 S4/降级脚本覆盖）
+        // 注意用 doThrow 而不是 when(...)：setUp 里已给 checkToken 注册了 answer，
+        // 若写 when(authClient.checkToken(any())) 会先执行旧桩（拿到 null → 抛 401），打不出新桩。
+        doThrow(new BusinessException(500, "权限服务暂不可用（未启动或网络不通），请稍后重试"))
+                .when(authClient).checkToken(any());
+
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":1}"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.msg").value("权限服务暂不可用（未启动或网络不通），请稍后重试"));
     }
 
     // ==================== 签退 ====================
@@ -271,6 +291,28 @@ class AttendanceServiceTests {
                 .andExpect(jsonPath("$.data.month").value(CURRENT_MONTH))
                 .andExpect(jsonPath("$.data.recordCount").value(1))
                 .andExpect(jsonPath("$.data.list.length()").value(1));
+    }
+
+    @Test
+    @DisplayName("TC-10 数据隔离：学生只能查到自己的记录，伪造 userId 参数也无效")
+    void tc10_myRecordIsolation() throws Exception {
+        // student1（userId=4）有一条已签退记录
+        insertRecord(4L, JOB_ID, DEPT_ID, LocalDateTime.now().minusMinutes(120), 120, 1);
+
+        // student2（userId=5）查自己的记录：应为空，看不到 student1 的数据
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT2_TOKEN)
+                        .param("month", CURRENT_MONTH))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.recordCount").value(0));
+
+        // 接口不暴露 userId 参数（身份只从 token 解析），显式传 userId=4 也不能越权
+        mockMvc.perform(get("/api/attendance/myRecord")
+                        .header("token", STUDENT2_TOKEN)
+                        .param("month", CURRENT_MONTH)
+                        .param("userId", "4"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.recordCount").value(0));
     }
 
     @Test

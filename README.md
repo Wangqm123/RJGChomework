@@ -238,9 +238,11 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - 单次工时超 12 小时自动标记「异常待确认」，核实后才计薪
 - 角色与数据隔离：学生只看本人；部门管理员只能看本部门（deptId 从权限服务取，防越权）；中心管理员看全校
 - 金额用 `BigDecimal` + 精确分钟计算，统一在 `common/CalcUtils`，「明细加总 = 汇总」
-- 单元测试 20 个（`cd attendance-service && mvn test`），覆盖未录用拦截、重复签到、异常工时、跨部门越权、依赖服务降级
+- 单元测试 **23 个**（`cd attendance-service && mvn test`），覆盖未录用拦截、重复签到、异常工时、
+  跨部门越权、权限/岗位服务降级、**并发签到防重**（数据库唯一约束 `uk_att_active` 兜底）
 - **三服务联调 23 个场景全部通过**（`python attendance-service/scripts/smoke_test.py`，需 8081/8082/8083 同时在线）：
   登录鉴权、Token 失效 401、未录用拦截 400、签到签退金额核算、数据隔离、部门越权 403、下架岗位拦截；
   另用 `degrade_test.py` 停掉岗位服务验证降级（写操作 500 不放行、查询类接口仍可用）
 - 联调前务必**删掉 `attendance-service/data/`**（H2 文件库，残留的未签退记录会导致签到被拦成 400）
 - 逐条结果与缺陷排查过程见 [attendance-service/测试与缺陷记录.md](attendance-service/测试与缺陷记录.md)
+- 现场演示按 [attendance-service/演示脚本.md](attendance-service/演示脚本.md) 执行（8 步、约 6 分钟，含应急方案与答辩问答）

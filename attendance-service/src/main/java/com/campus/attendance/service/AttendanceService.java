@@ -13,6 +13,7 @@ import com.campus.attendance.dto.MyRecordView;
 import com.campus.attendance.dto.RecordView;
 import com.campus.attendance.entity.AttendanceRecord;
 import com.campus.attendance.repository.AttendanceRecordRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -86,7 +87,16 @@ public class AttendanceService {
         record.setHourSalary(job.hourSalary());
         record.setCheckInTime(now);
         record.setStatus(AttendanceStatus.CHECKED_IN);
-        recordRepository.save(record);
+        // 未签退期间的排他键：并发请求里只有一个能插入成功，其余被唯一索引拒绝
+        record.setActiveKey(AttendanceRecord.buildActiveKey(userId, jobId));
+        try {
+            // 用 saveAndFlush 让唯一索引冲突在这里立刻暴露，好转换成 400 而不是 500
+            recordRepository.saveAndFlush(record);
+        } catch (DataIntegrityViolationException e) {
+            // 上面的"关 3"只能挡住先后请求，挡不住同时到达的两个请求；
+            // 真正兜底的是 uk_att_active 唯一索引，冲突说明对方请求已抢先落库
+            throw new BusinessException(400, "您在该岗位已签到且未签退，请先签退");
+        }
 
         return new CheckInResult(
                 record.getId(),
@@ -125,6 +135,8 @@ public class AttendanceService {
         record.setWorkMinutes(workMinutes);
         record.setStatus(abnormal ? AttendanceStatus.ABNORMAL : AttendanceStatus.CHECKED_OUT);
         record.setRemark(abnormal ? "单次工时超过 12 小时，需管理员核实后计薪" : null);
+        // 释放排他键：签退后该岗位可以再次签到（历史多次打卡记录不受唯一索引影响）
+        record.setActiveKey(null);
         recordRepository.save(record);
 
         String tip = abnormal

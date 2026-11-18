@@ -67,7 +67,7 @@ java -jar target/attendance-service-1.0.0.jar
 启动成功后：本服务 `http://localhost:8083`，数据控制台 `http://localhost:8083/h2-console`
 （JDBC URL `jdbc:h2:file:./data/attendancedb`，用户 sa，密码空）。
 
-运行单元测试（20 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（23 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -208,6 +208,11 @@ curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "toke
 attendance-service
 ├── pom.xml
 ├── README.md
+├── 演示脚本.md                                    # 现场演示 8 步（成员 6 用）
+├── 测试与缺陷记录.md                              # 23 条用例 + 4 个缺陷的复现与回归
+├── scripts
+│   ├── smoke_test.py                              # 三服务联调 23 场景
+│   └── degrade_test.py                            # 依赖服务离线降级验证
 └── src
     ├── main
     │   ├── java/com/campus/attendance
@@ -218,17 +223,18 @@ attendance-service
     │   │   ├── service/AuthGuard.java               # Token 校验 + 角色/部门拦截
     │   │   ├── client/AuthClient.java               # 调权限服务（checkToken/getUserInfo）
     │   │   ├── client/JobClient.java                # 调岗位服务（getStudentHired/getJob）
-    │   │   ├── entity/AttendanceRecord.java         # 签到记录实体
+    │   │   ├── entity/AttendanceRecord.java         # 签到记录实体（含并发排他键）
     │   │   ├── repository/…                         # JPA 数据访问
     │   │   ├── dto/…                                # 请求/响应对象
     │   │   ├── common/…                             # 统一返回、异常、状态字典、月份区间、金额计算
     │   │   └── config/RestTemplateConfig.java       # HTTP 客户端超时配置
     │   └── resources
     │       ├── application.yml / application-mysql.yml
-    │       ├── schema.sql                           # 建表语句
+    │       ├── schema.sql                           # 建表语句（含 uk_att_active 并发约束）
     │       └── data.sql                             # 造数说明（不预置记录）
     └── test/java/com/campus/attendance
-        └── AttendanceServiceTests.java              # 20 个单元测试
+        ├── AttendanceServiceTests.java              # 22 个业务规则用例
+        └── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
 ```
 
 ## 九、技术说明
@@ -237,6 +243,9 @@ attendance-service
 - **超时保护**：`RestTemplate` 连接 3s / 读取 5s，对方服务卡死不会拖垮本服务；
 - **快照设计**：签到即冻结时薪与部门，历史工资不受调薪影响，汇总也不必跨服务查询；
 - **金额精度**：`BigDecimal` + 精确分钟计算，避免浮点误差与"明细加总 ≠ 汇总"；
+- **并发防重**：`active_key`（未签退时 = `userId:jobId`，签退置 NULL）+ 唯一约束 `uk_att_active`，
+  由数据库拦下并发重复签到；业务层先查重只作友好提示。选择这一方案而不是进程内锁，
+  是因为它天然支持多实例部署，且不影响同一岗位的历史多次打卡记录。
 - **半开区间查月**：用 `[月初, 下月初)` 而不是 `BETWEEN`，不会漏掉月末最后一秒的记录；
 - **测试隔离**：单元测试用内存库 + `@Transactional` 回滚，两个外部服务用 `@MockBean` 打桩，不依赖网络；
 - **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL（注意 `data.sql` 的 `MERGE` 语法需改写）。

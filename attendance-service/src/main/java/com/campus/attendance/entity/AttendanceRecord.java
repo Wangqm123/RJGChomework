@@ -64,6 +64,18 @@ public class AttendanceRecord {
     @Column(name = "remark", length = 200)
     private String remark;
 
+    /**
+     * 并发签到的排他键：未签退时 = "userId:jobId"，签退后置 null。
+     *
+     * 为什么需要它：业务层"先查有没有未签退记录、再插入"存在竞态窗口，
+     * 两个并发请求会各查一次都查不到，然后各插一条，工时就被重复计算。
+     * 数据库层加 UNIQUE(active_key) 兜底后，第二条插入必然被拒；
+     * 而签退后置 null，所以同一岗位的历史多次打卡不受影响
+     * （多个 NULL 不参与唯一性判断，H2 与 MySQL 行为一致）。
+     */
+    @Column(name = "active_key", length = 64)
+    private String activeKey;
+
     @Column(name = "create_time")
     private LocalDateTime createTime;
 
@@ -170,6 +182,19 @@ public class AttendanceRecord {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public String getActiveKey() {
+        return activeKey;
+    }
+
+    public void setActiveKey(String activeKey) {
+        this.activeKey = activeKey;
+    }
+
+    /** 未签退记录的排他键：同一学生 + 同一岗位同时只能有一条 */
+    public static String buildActiveKey(Long userId, Long jobId) {
+        return userId + ":" + jobId;
     }
 
     public LocalDateTime getCreateTime() {
