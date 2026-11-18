@@ -35,3 +35,40 @@ CREATE TABLE IF NOT EXISTS t_attendance_record (
 CREATE INDEX IF NOT EXISTS idx_att_user_time ON t_attendance_record (user_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_dept_time ON t_attendance_record (dept_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_status    ON t_attendance_record (status);
+
+-- ============================================================
+-- 月度补贴发放单：结算（核算留痕）与发放（打款）的凭证表
+-- ============================================================
+-- 为什么单独建表而不是每次实时算：
+--   实时算出的金额会随签到记录变化，补录一条工时就会让"已经打过的钱"对不上账。
+--   结算时把人数、工时、金额、包含哪些记录固化下来，之后打款和对账都以这张单为准。
+CREATE TABLE IF NOT EXISTS t_subsidy (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id       BIGINT        NOT NULL,
+    -- 按部门拆单：一个人跨部门打工时各部门各自一张单，
+    -- 这样"部门汇总金额 = 该部门发放单合计"，对账不会串部门
+    dept_id       BIGINT        NOT NULL,
+    -- 结算月份 yyyy-MM（列名不用 month，避免与 SQL 的 MONTH() 函数混淆）
+    settle_month  VARCHAR(7)    NOT NULL,
+    record_count  INT           NOT NULL,
+    -- 工时存分钟，与 t_attendance_record 口径一致，避免小时小数累计误差
+    work_minutes  INT           NOT NULL,
+    total_amount  DECIMAL(10,2) NOT NULL,
+    -- 0 待发放 / 1 已发放
+    status        INT           NOT NULL,
+    -- 本次结算包含的签到记录 id，逗号分隔，用于从发放单回溯到原始打卡
+    record_ids    VARCHAR(2000),
+    settle_time   TIMESTAMP,
+    pay_time      TIMESTAMP,
+    operator_id   BIGINT,
+    remark        VARCHAR(200),
+    create_time   TIMESTAMP,
+    update_time   TIMESTAMP,
+    -- 一人一月一部门只能有一张单：重复结算是"刷新"而不是"新增"，
+    -- 并发重复结算时数据库直接拒绝第二条插入，不依赖进程内锁（多实例也有效）
+    CONSTRAINT uk_subsidy_user_dept_month UNIQUE (user_id, dept_id, settle_month)
+);
+
+-- 按月 + 部门对账、按状态找待发放单时用（⚠ MySQL 需去掉 IF NOT EXISTS，见文件末尾说明）
+CREATE INDEX IF NOT EXISTS idx_subsidy_month_dept ON t_subsidy (settle_month, dept_id);
+CREATE INDEX IF NOT EXISTS idx_subsidy_month_status ON t_subsidy (settle_month, status);

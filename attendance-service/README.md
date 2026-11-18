@@ -13,6 +13,8 @@
 | 学生签退 | 回填工时，单次超 12 小时标记「异常待确认」，需核实后才计薪 |
 | 我的记录 | 按月查自己的签到记录与当月合计 |
 | 月度补贴 | 按「工时 × 当时时薪」核算，精确到分 |
+| **月度结算** | 把某月已签退工时固化成**发放单**（`t_subsidy`），金额留痕可回溯 |
+| **补贴发放** | 批量把待发放单标记为已发放，金额冻结；重复点不重复计数 |
 | 部门汇总 | 部门管理员看本部门，按学生下钻；中心管理员可指定部门查 |
 | 全校汇总 | 助学中心管理员看，按部门下钻 |
 
@@ -67,7 +69,7 @@ java -jar target/attendance-service-1.0.0.jar
 启动成功后：本服务 `http://localhost:8083`，数据控制台 `http://localhost:8083/h2-console`
 （JDBC URL `jdbc:h2:file:./data/attendancedb`，用户 sa，密码空）。
 
-运行单元测试（23 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（39 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -90,11 +92,15 @@ mvn test
 | `/api/attendance/checkIn` | POST | 签到 `{jobId}` | 学生本人 | `{recordId, jobName, hourSalary, checkInTime, status}` |
 | `/api/attendance/checkOut` | POST | 签退 `{jobId}` | 学生本人 | `{workMinutes, workHours, amount, status, tip}` |
 | `/api/attendance/myRecord` | GET | 我的记录 `?month=2026-11` | 学生本人 | `{month, recordCount, settledCount, pendingCount, totalHours, totalAmount, list}` |
-| `/api/attendance/mySubsidy` | GET | 我的月度补贴 `?month=2026-11` | 学生本人 | `{userName, month, recordCount, totalHours, totalAmount}` |
+| `/api/attendance/mySubsidy` | GET | 我的月度补贴 `?month=2026-11` | 学生本人 | `{userName, month, recordCount, totalHours, totalAmount, settleStatus, settleStatusName}` |
 | `/api/attendance/deptSummary` | GET | 部门汇总 `?month=&deptId=` | 部门管理员（本部门）/ 中心管理员（需指定 deptId） | `{deptId, personCount, totalHours, totalAmount, list}` |
 | `/api/attendance/schoolSummary` | GET | 全校汇总 `?month=` | 助学中心管理员 | `{deptCount, personCount, totalHours, totalAmount, list}` |
+| `/api/attendance/settle` | POST | 月度结算 `{month, deptId?, remark?}` | 助学中心管理员 | `{month, userCount, createdCount, refreshedCount, skippedCount, totalHours, totalAmount, list}` |
+| `/api/attendance/pay` | POST | 批量发放 `{month, deptId?}` | 助学中心管理员 | `{month, paidCount, paidAmount, tip}` |
+| `/api/attendance/subsidyList` | GET | 发放单列表 `?month=&deptId=&status=` | 部门管理员（本部门）/ 中心管理员（可全校） | `[{subsidyId, userId, userName, deptId, month, recordCount, totalHours, totalAmount, status, statusName, settleTime, payTime}]` |
 
-`month` 不传默认**当月**，格式必须是 `yyyy-MM`，否则 400。
+`month` 不传默认**当月**（`settle` / `pay` 例外：**必须显式传**，避免误操作把本月账结掉），
+格式必须是 `yyyy-MM`，否则 400。
 
 ### 4.1 请求示例
 
@@ -121,6 +127,19 @@ curl "http://localhost:8083/api/attendance/deptSummary?month=2026-11" -H "token:
 
 # 5. 助学中心管理员查全校汇总
 curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "token: <center的token>"
+
+# 6. 助学中心管理员结算（全校，也可加 "deptId":1 只结一个部门）
+curl -X POST http://localhost:8083/api/attendance/settle \
+  -H "Content-Type: application/json" -H "token: <center的token>" \
+  -d '{"month":"2026-11"}'
+
+# 7. 查发放单（部门管理员只看本部门；中心管理员不传 deptId 看全校）
+curl "http://localhost:8083/api/attendance/subsidyList?month=2026-11&status=0" -H "token: <center的token>"
+
+# 8. 批量发放（把待发放标记为已发放，重复调用返回 400）
+curl -X POST http://localhost:8083/api/attendance/pay \
+  -H "Content-Type: application/json" -H "token: <center的token>" \
+  -d '{"month":"2026-11"}'
 ```
 
 ## 五、业务规则与核算口径
@@ -157,6 +176,23 @@ curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "toke
 - 一律 `BigDecimal`，不用 `double`；
 - 只统计已签退（status=1），未签退和异常待确认不计入，避免学生误以为已经算钱。
 
+**结算 ≠ 实时核算**（答辩常被追问）：
+
+| | 实时核算（mySubsidy / deptSummary） | 结算（settle → 发放单） |
+|---|---|---|
+| 是否落库 | 不落库，每次现算 | 写入 `t_subsidy`，留痕 |
+| 数据变化 | 补录工时后金额立刻变 | 待发放可刷新；**已发放冻结** |
+| 用途 | 学生/管理员随时看账 | 对账、打款凭证 |
+
+```
+结算金额 = Σ(该人该部门该月 status=1 的记录金额)   ← 与实时核算口径完全一致
+一人一月一部门一张单，唯一键 (user_id, dept_id, settle_month)
+已发放的单再次结算 → 跳过（skippedCount++），金额不改
+```
+
+按部门拆单而不是"一人一月一张"：一个人跨部门打工时，各部门各自结算，
+这样**部门汇总金额 = 该部门发放单合计**，部门对账不会串。
+
 ### 5.4 为什么存时薪快照
 
 签到时把 `jobName`、`hourSalary`、`deptId` 一起写进签到记录：
@@ -173,6 +209,13 @@ curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "toke
 | myRecord / mySubsidy | ✅ 本人 | ❌ 403 | ❌ 403 | ❌ 403 |
 | deptSummary | ❌ 403 | ✅ 本部门 | ✅ 需指定 deptId | ❌ 403 |
 | schoolSummary | ❌ 403 | ❌ 403 | ✅ | ❌ 403 |
+| settle（结算） | ❌ 403 | ❌ 403 | ✅ | ❌ 403 |
+| pay（发放） | ❌ 403 | ❌ 403 | ✅ | ❌ 403 |
+| subsidyList | ❌ 403 | ✅ 本部门 | ✅ 全校/指定部门 | ❌ 403 |
+
+**为什么部门管理员不能结算/发放**：钱由助学中心统一核算与打款，
+部门只负责用工与核对工时；结算与发放都只开放给中心管理员，
+避免"部门自己报工时自己发钱"的越权风险。
 
 部门管理员的 `deptId` **一律从权限服务取**，前端传别的部门直接 403（防越权）。
 
@@ -191,6 +234,10 @@ curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "toke
 | 月份格式错（如 2026-13） | 400「月份格式应为 yyyy-MM，例如 2026-11」 |
 | 部门管理员查其他部门 | 403「只能查看本部门的工时汇总」 |
 | 中心管理员查部门汇总不传 deptId | 400 |
+| 该月没有可结算工时 | 400「该月没有可结算的已签退工时记录」 |
+| 结算不传月份 / 格式错 | 400 |
+| 重复发放（已无待发放单） | 400「该月没有待发放的补贴单」 |
+| 并发结算导致唯一键冲突 | 400「本月结算正在被其他操作执行，请稍后重试」 |
 | 权限服务 / 岗位服务不可用 | 500「XX 服务暂不可用，请稍后重试」 |
 
 ## 七、预置数据
@@ -208,33 +255,36 @@ curl "http://localhost:8083/api/attendance/schoolSummary?month=2026-11" -H "toke
 attendance-service
 ├── pom.xml
 ├── README.md
-├── 演示脚本.md                                    # 现场演示 8 步（成员 6 用）
-├── 测试与缺陷记录.md                              # 23 条用例 + 4 个缺陷的复现与回归
+├── 演示脚本.md                                    # 现场演示 9 步（成员 6 用）
+├── 测试与缺陷记录.md                              # 39 条用例 + 4 个缺陷的复现与回归
 ├── scripts
-│   ├── smoke_test.py                              # 三服务联调 23 场景
+│   ├── smoke_test.py                              # 三服务联调 33 场景（含结算与发放）
 │   └── degrade_test.py                            # 依赖服务离线降级验证
 └── src
     ├── main
     │   ├── java/com/campus/attendance
     │   │   ├── AttendanceServiceApplication.java   # 启动类（8083）
-    │   │   ├── controller/AttendanceController.java # 6 个接口入口
+    │   │   ├── controller/AttendanceController.java # 9 个接口入口
     │   │   ├── service/AttendanceService.java       # 签到/签退/我的记录
-    │   │   ├── service/SubsidyService.java          # 补贴核算 + 部门/全校汇总
+    │   │   ├── service/SubsidyService.java          # 实时核算 + 部门/全校汇总
+    │   │   ├── service/SettlementService.java       # 月度结算 + 批量发放 + 发放单查询
     │   │   ├── service/AuthGuard.java               # Token 校验 + 角色/部门拦截
     │   │   ├── client/AuthClient.java               # 调权限服务（checkToken/getUserInfo）
     │   │   ├── client/JobClient.java                # 调岗位服务（getStudentHired/getJob）
     │   │   ├── entity/AttendanceRecord.java         # 签到记录实体（含并发排他键）
-    │   │   ├── repository/…                         # JPA 数据访问
+    │   │   ├── entity/Subsidy.java                  # 月度发放单实体
+    │   │   ├── repository/…                         # JPA 数据访问（含条件更新发放）
     │   │   ├── dto/…                                # 请求/响应对象
     │   │   ├── common/…                             # 统一返回、异常、状态字典、月份区间、金额计算
     │   │   └── config/RestTemplateConfig.java       # HTTP 客户端超时配置
     │   └── resources
     │       ├── application.yml / application-mysql.yml
-    │       ├── schema.sql                           # 建表语句（含 uk_att_active 并发约束）
+    │       ├── schema.sql                           # 建表语句（含并发约束与发放单唯一键）
     │       └── data.sql                             # 造数说明（不预置记录）
     └── test/java/com/campus/attendance
         ├── AttendanceServiceTests.java              # 22 个业务规则用例
-        └── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
+        ├── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
+        └── SettlementServiceTests.java              # 16 个结算/发放用例（TC-24~TC-39）
 ```
 
 ## 九、技术说明
@@ -246,17 +296,21 @@ attendance-service
 - **并发防重**：`active_key`（未签退时 = `userId:jobId`，签退置 NULL）+ 唯一约束 `uk_att_active`，
   由数据库拦下并发重复签到；业务层先查重只作友好提示。选择这一方案而不是进程内锁，
   是因为它天然支持多实例部署，且不影响同一岗位的历史多次打卡记录。
+- **结算幂等**：发放单唯一键 `(user_id, dept_id, settle_month)`，重复结算只能刷新不能新增；
+  并发结算由唯一键兜底，冲突时整体回滚并提示重试，不会出现两张单重复发钱。
+- **发放幂等**：用条件更新 `UPDATE ... WHERE status=0`，只有仍为待发放的才改成已发放，
+  按影响行数统计发放人数——两个管理员同时点发放，第二次影响 0 行，不会重复计数，也不需要悲观锁。
 - **半开区间查月**：用 `[月初, 下月初)` 而不是 `BETWEEN`，不会漏掉月末最后一秒的记录；
 - **测试隔离**：单元测试用内存库 + `@Transactional` 回滚，两个外部服务用 `@MockBean` 打桩，不依赖网络；
 - **数据库可切换**：默认 H2，启动加 `--spring.profiles.active=mysql` 即切 MySQL（注意 `data.sql` 的 `MERGE` 语法需改写）。
 
-## 十、联调验证（已执行，23/23 通过）
+## 十、联调验证（已执行，33/33 通过）
 
 三个服务同时在线后，可直接跑仓库内附的联调脚本，无需 Postman：
 
 ```bash
 # 前置：三个服务已启动（8081 / 8082 / 8083），且已按第三节清过 data 目录
-python scripts/smoke_test.py     # 23 个场景：鉴权、未录用拦截、签到签退、金额、越权、下架岗位
+python scripts/smoke_test.py     # 33 个场景：鉴权、未录用拦截、签到签退、金额、越权、下架岗位、结算与发放
 python scripts/degrade_test.py   # 降级：需先手动停掉 8082，验证「写操作拒绝、读操作可用」
 ```
 
@@ -272,4 +326,6 @@ python scripts/degrade_test.py   # 降级：需先手动停掉 8082，验证「�
 | 时薪快照 | 签到返回 hourSalary=25.0、deptId=1 |
 | 金额核算 | 1 分钟 × 25 元/时 = 0.42 元，明细与汇总一致 |
 | 权限隔离与越权 | 学生 403、部门管理员跨部门 403、中心管理员全校可查 |
+| 结算生成发放单 | 中心管理员结算成功，金额与实时核算一致；重复结算只刷新不新增 |
+| 发放与幂等 | 发放后 `paidCount` 正确，重复发放 400，学生端 `settleStatus` 变为已发放 |
 | 依赖服务降级 | 停 8082 后签到 500 且不放行，查询类接口仍 200 |

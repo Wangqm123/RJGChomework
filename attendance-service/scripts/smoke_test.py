@@ -1,12 +1,14 @@
 """三服务联调冒烟：auth 8081 / job 8082 / attendance 8083
 
-覆盖：登录鉴权、跨服务录用校验、签到签退、金额核算、权限隔离、越权拦截。
+覆盖：登录鉴权、跨服务录用校验、签到签退、金额核算、权限隔离、越权拦截、
+      月度结算（生成发放单）、批量发放与幂等。
 口令用拼接构造，避免明文落在脚本里。
 """
 import json
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from decimal import Decimal
 
 AUTH = "http://localhost:8081"
@@ -15,6 +17,7 @@ ATT = "http://localhost:8083"
 
 PASSWORD = "123" + "456"
 JOIN_WAIT_SECONDS = 75
+MONTH = datetime.now().strftime("%Y-%m")
 
 results = []
 
@@ -172,6 +175,79 @@ check("S7-6", "部门管理员访问全校汇总", body.get("code") == 403,
 # ---------- 场景 8：岗位状态校验 ----------
 status, body = call("POST", ATT + "/api/attendance/checkIn", token=stu1, body={"jobId": 5})
 check("S8-1", "签到最后下架岗位", body.get("code") == 400,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+# ---------- 场景 9：月度结算与发放（核算 → 留痕 → 打款） ----------
+status, body = call("POST", ATT + "/api/attendance/settle", token=stu1,
+                    body={"month": MONTH})
+check("S9-1", "学生无权结算", body.get("code") == 403,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+status, body = call("POST", ATT + "/api/attendance/settle", token=depta,
+                    body={"month": MONTH})
+check("S9-2", "部门管理员无权结算", body.get("code") == 403,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+status, body = call("POST", ATT + "/api/attendance/settle", token=center,
+                    body={"month": MONTH})
+st = body.get("data") or {}
+settled_amount = Decimal(str(st.get("totalAmount", "0")))
+ok = (body.get("code") == 200 and st.get("createdCount", 0) >= 1
+      and settled_amount == amount_out)
+check("S9-3", "中心管理员结算生成发放单", ok,
+      "code=%s created=%s refreshed=%s amount=%s 期望=%s" % (
+          body.get("code"), st.get("createdCount"), st.get("refreshedCount"),
+          settled_amount, amount_out))
+
+status, body = call("POST", ATT + "/api/attendance/settle", token=center,
+                    body={"month": MONTH})
+st2 = body.get("data") or {}
+ok = (body.get("code") == 200 and st2.get("createdCount") == 0
+      and st2.get("refreshedCount", 0) >= 1
+      and Decimal(str(st2.get("totalAmount", "0"))) == amount_out)
+check("S9-4", "重复结算只刷新不新增（幂等）", ok,
+      "code=%s created=%s refreshed=%s amount=%s" % (
+          body.get("code"), st2.get("createdCount"), st2.get("refreshedCount"),
+          st2.get("totalAmount")))
+
+status, body = call("GET", ATT + "/api/attendance/subsidyList?month=" + MONTH, token=depta)
+slips = body.get("data") or []
+ok = (body.get("code") == 200 and len(slips) == 1
+      and slips[0].get("deptId") == 1
+      and Decimal(str(slips[0].get("totalAmount", "0"))) == amount_out)
+check("S9-5", "部门管理员查本部门发放单", ok,
+      "code=%s count=%s amount=%s status=%s" % (
+          body.get("code"), len(slips),
+          slips[0].get("totalAmount") if slips else "-",
+          slips[0].get("statusName") if slips else "-"))
+
+status, body = call("GET", ATT + "/api/attendance/subsidyList?month=" + MONTH + "&deptId=2",
+                    token=depta)
+check("S9-6", "部门管理员越权查其他部门发放单", body.get("code") == 403,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+status, body = call("POST", ATT + "/api/attendance/pay", token=center,
+                    body={"month": MONTH})
+pr = body.get("data") or {}
+ok = (body.get("code") == 200 and pr.get("paidCount", 0) >= 1
+      and Decimal(str(pr.get("paidAmount", "0"))) == amount_out)
+check("S9-7", "批量发放标记为已发放", ok,
+      "code=%s paidCount=%s paidAmount=%s" % (
+          body.get("code"), pr.get("paidCount"), pr.get("paidAmount")))
+
+status, body = call("POST", ATT + "/api/attendance/pay", token=center,
+                    body={"month": MONTH})
+check("S9-8", "重复发放被拒（不重复计数）", body.get("code") == 400,
+      "code=%s msg=%s" % (body.get("code"), body.get("msg")))
+
+status, body = call("GET", ATT + "/api/attendance/mySubsidy?month=" + MONTH, token=stu1)
+sub2 = body.get("data") or {}
+check("S9-9", "学生看到补贴已发放", body.get("code") == 200 and sub2.get("settleStatus") == 1,
+      "code=%s settleStatus=%s statusName=%s" % (
+          body.get("code"), sub2.get("settleStatus"), sub2.get("settleStatusName")))
+
+status, body = call("POST", ATT + "/api/attendance/settle", token=center, body={})
+check("S9-10", "结算不传月份被拒", body.get("code") == 400,
       "code=%s msg=%s" % (body.get("code"), body.get("msg")))
 
 # ---------- 汇总 ----------

@@ -8,8 +8,14 @@ import com.campus.attendance.dto.CheckOutResult;
 import com.campus.attendance.dto.DeptSummaryView;
 import com.campus.attendance.dto.MonthSubsidyView;
 import com.campus.attendance.dto.MyRecordView;
+import com.campus.attendance.dto.PayRequest;
+import com.campus.attendance.dto.PayResult;
 import com.campus.attendance.dto.SchoolSummaryView;
+import com.campus.attendance.dto.SettleRequest;
+import com.campus.attendance.dto.SettleResult;
+import com.campus.attendance.dto.SubsidyView;
 import com.campus.attendance.service.AttendanceService;
+import com.campus.attendance.service.SettlementService;
 import com.campus.attendance.service.SubsidyService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 工时考勤与补贴核算服务对外接口（《接口文档初稿》服务3，前缀 /api/attendance）。
@@ -33,11 +41,14 @@ public class AttendanceController {
 
     private final AttendanceService attendanceService;
     private final SubsidyService subsidyService;
+    private final SettlementService settlementService;
 
     public AttendanceController(AttendanceService attendanceService,
-                                SubsidyService subsidyService) {
+                                SubsidyService subsidyService,
+                                SettlementService settlementService) {
         this.attendanceService = attendanceService;
         this.subsidyService = subsidyService;
+        this.settlementService = settlementService;
     }
 
     /**
@@ -112,5 +123,53 @@ public class AttendanceController {
             @RequestHeader(value = "token", required = false) String token,
             @RequestParam(value = "month", required = false) String month) {
         return ApiResponse.ok(subsidyService.schoolSummary(token, month));
+    }
+
+    /**
+     * POST /api/attendance/settle 月度结算（助学中心管理员）
+     * 请求体：{ month: "2026-11", deptId?: 1, remark?: "..." }
+     *   不传 deptId = 全校结算；传了 = 只结算该部门
+     * 返回 data：{ month, deptId, userCount, createdCount, refreshedCount, skippedCount,
+     *             totalHours, totalAmount, list:[发放单] }
+     *
+     * 语义：把该月已签退工时固化成发放单。
+     *   新建 / 刷新待发放单；已发放的单跳过（金额冻结，不重复发钱）。
+     */
+    @PostMapping("/settle")
+    public ApiResponse<SettleResult> settle(
+            @RequestHeader(value = "token", required = false) String token,
+            @Valid @RequestBody SettleRequest req) {
+        return ApiResponse.ok(settlementService.settle(
+                token, req.month(), req.deptId(), req.remark()));
+    }
+
+    /**
+     * POST /api/attendance/pay 批量发放（助学中心管理员）
+     * 请求体：{ month: "2026-11", deptId?: 1 }
+     * 返回 data：{ month, deptId, paidCount, paidAmount, tip }
+     *
+     * 只把"待发放"改成"已发放"，重复点不会重复计数（条件更新保证幂等）。
+     */
+    @PostMapping("/pay")
+    public ApiResponse<PayResult> pay(
+            @RequestHeader(value = "token", required = false) String token,
+            @Valid @RequestBody PayRequest req) {
+        return ApiResponse.ok(settlementService.pay(token, req.month(), req.deptId()));
+    }
+
+    /**
+     * GET /api/attendance/subsidyList 补贴发放单列表
+     * 请求参数：month（yyyy-MM）、deptId（部门管理员可省略=本部门；中心管理员可省略=全校）、
+     *          status（0 待发放 / 1 已发放，不传=全部）
+     * 返回 data：[{ subsidyId, userId, userName, deptId, month, recordCount,
+     *              totalHours, totalAmount, status, statusName, settleTime, payTime }]
+     */
+    @GetMapping("/subsidyList")
+    public ApiResponse<List<SubsidyView>> subsidyList(
+            @RequestHeader(value = "token", required = false) String token,
+            @RequestParam(value = "month", required = false) String month,
+            @RequestParam(value = "deptId", required = false) Long deptId,
+            @RequestParam(value = "status", required = false) Integer status) {
+        return ApiResponse.ok(settlementService.subsidyList(token, month, deptId, status));
     }
 }

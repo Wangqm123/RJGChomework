@@ -6,12 +6,15 @@ import com.campus.attendance.common.BusinessException;
 import com.campus.attendance.common.CalcUtils;
 import com.campus.attendance.common.MonthRange;
 import com.campus.attendance.common.Roles;
+import com.campus.attendance.common.SubsidyStatus;
 import com.campus.attendance.dto.DeptSummaryView;
 import com.campus.attendance.dto.MonthSubsidyView;
 import com.campus.attendance.dto.PersonSummary;
 import com.campus.attendance.dto.SchoolSummaryView;
 import com.campus.attendance.entity.AttendanceRecord;
+import com.campus.attendance.entity.Subsidy;
 import com.campus.attendance.repository.AttendanceRecordRepository;
+import com.campus.attendance.repository.SubsidyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -45,13 +48,16 @@ public class SubsidyService {
     private static final Logger log = LoggerFactory.getLogger(SubsidyService.class);
 
     private final AttendanceRecordRepository recordRepository;
+    private final SubsidyRepository subsidyRepository;
     private final AuthGuard authGuard;
     private final AuthClient authClient;
 
     public SubsidyService(AttendanceRecordRepository recordRepository,
+                          SubsidyRepository subsidyRepository,
                           AuthGuard authGuard,
                           AuthClient authClient) {
         this.recordRepository = recordRepository;
+        this.subsidyRepository = subsidyRepository;
         this.authGuard = authGuard;
         this.authClient = authClient;
     }
@@ -76,13 +82,31 @@ public class SubsidyService {
                 .map(r -> CalcUtils.amount(r.getWorkMinutes(), r.getHourSalary()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Integer settleStatus = settleStatusOf(session.userId(), range.month());
+
         return new MonthSubsidyView(
                 session.userId(),
                 safeUserName(session.userId()),
                 range.month(),
                 records.size(),
                 CalcUtils.workHours(minutes),
-                CalcUtils.money(amount));
+                CalcUtils.money(amount),
+                settleStatus,
+                SubsidyStatus.nameOf(settleStatus));
+    }
+
+    /**
+     * 该学生本月发放单的整体状态（跨部门汇总）：
+     * 没有任何发放单 = null（未结算）；全部已发放 = 1；否则 = 0（还有待发放）。
+     */
+    private Integer settleStatusOf(Long userId, String month) {
+        List<Subsidy> slips = subsidyRepository.findByUserIdAndSettleMonth(userId, month);
+        if (slips.isEmpty()) {
+            return null;
+        }
+        boolean allPaid = slips.stream()
+                .allMatch(s -> s.getStatus() != null && s.getStatus() == SubsidyStatus.PAID);
+        return allPaid ? SubsidyStatus.PAID : SubsidyStatus.PENDING;
     }
 
     /**
