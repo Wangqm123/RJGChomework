@@ -77,7 +77,8 @@ public class AttendanceService {
         if (job.deptId() == null || job.deptId() <= 0) {
             throw new BusinessException(500, "岗位数据异常：未取到所属部门，暂不能签到，请联系管理员");
         }
-        if (job.hourSalary() == null) {
+        // 时薪为 null 或非正数都算上游数据异常：0 元时薪会写出一条"干了活却永远算 0 元"的记录
+        if (job.hourSalary() == null || job.hourSalary().signum() <= 0) {
             throw new BusinessException(500, "岗位数据异常：未取到时薪，暂不能签到，请联系管理员");
         }
 

@@ -70,10 +70,16 @@ public class JobClient {
         JsonNode data = body.path("data");
         JsonNode deptNode = data.path("deptId");
         Long deptId = (deptNode.isMissingNode() || deptNode.isNull()) ? 0L : deptNode.asLong();
+        // 注意：JsonNode.decimalValue() 对缺失字段返回 0 而不是 null，
+        // 直接调用会把"上游没给时薪"伪装成"时薪 0 元"，签到链路就拦不住了，所以这里显式判空。
+        JsonNode salaryNode = data.path("hourSalary");
+        BigDecimal hourSalary = (salaryNode.isMissingNode() || salaryNode.isNull())
+                ? null
+                : salaryNode.decimalValue();
         return new JobInfo(
                 data.path("jobId").asLong(),
                 data.path("jobName").asText(""),
-                data.path("hourSalary").decimalValue(),
+                hourSalary,
                 deptId,
                 data.path("status").asInt());
     }

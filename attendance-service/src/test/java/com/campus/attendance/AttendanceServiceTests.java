@@ -122,6 +122,10 @@ class AttendanceServiceTests {
             if (jobId != null && jobId == 2L) {
                 return new JobClient.JobInfo(2L, "缺少部门的岗位", SALARY, 0L, 2);
             }
+            // 岗位 3：岗位存在但上游没给时薪（hourSalary=null），用于验证"不落 0 元时薪的记录"
+            if (jobId != null && jobId == 3L) {
+                return new JobClient.JobInfo(3L, "缺少时薪的岗位", null, DEPT_ID, 2);
+            }
             throw new BusinessException(400, "岗位不存在");
         });
         when(jobClient.isStudentHired(anyLong(), anyLong())).thenAnswer(inv -> {
@@ -580,7 +584,7 @@ class AttendanceServiceTests {
     }
 
     @Test
-    @DisplayName("TC-45 岗位缺 deptId 时拒绝签到：500 且不落部门 0 的脏记录")
+    @DisplayName("TC-45 岗位缺 deptId / 时薪时拒绝签到：500 且不落脏记录")
     void tc45_checkInWithoutDeptId() throws Exception {
         mockMvc.perform(post("/api/attendance/checkIn")
                         .header("token", STUDENT_TOKEN)
@@ -588,6 +592,14 @@ class AttendanceServiceTests {
                         .content("{\"jobId\":2}"))
                 .andExpect(jsonPath("$.code").value(500))
                 .andExpect(jsonPath("$.msg").value("岗位数据异常：未取到所属部门，暂不能签到，请联系管理员"));
+
+        // 时薪缺失同样必须拦住：否则会写出一条"干了活却永远算 0 元"的记录
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":3}"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.msg").value("岗位数据异常：未取到时薪，暂不能签到，请联系管理员"));
 
         org.assertj.core.api.Assertions.assertThat(recordRepository.count()).isZero();
     }

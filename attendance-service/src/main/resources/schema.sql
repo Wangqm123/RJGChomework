@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS t_attendance_record (
 );
 
 -- 以下索引用于"我的记录 / 按月汇总 / 定位未签退记录"的查询加速。
--- ⚠ 仅 H2 支持 CREATE INDEX IF NOT EXISTS；切换 MySQL 时请注释掉这 3 行，
---   建库后按 application-mysql.yml 顶部的说明手工执行等价的 ALTER TABLE ... ADD INDEX。
+-- ⚠ 仅 H2 支持 CREATE INDEX IF NOT EXISTS；切换 MySQL 时请注释掉本段这 3 行
+--   （连同 t_subsidy 的 2 行，全文共 5 行），建库后按文件末尾的清单手工执行等价的 ALTER TABLE ... ADD INDEX。
 CREATE INDEX IF NOT EXISTS idx_att_user_time ON t_attendance_record (user_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_dept_time ON t_attendance_record (dept_id, check_in_time);
 CREATE INDEX IF NOT EXISTS idx_att_status    ON t_attendance_record (status);
