@@ -132,8 +132,14 @@ public class ApplyService {
     /**
      * 查询学生是否被该岗位录用（接口文档约定：给工时服务调用，data 只有 true/false）。
      * 没投递、被拒绝、岗位不存在都返回 false，让调用方统一按"不可打卡"处理。
+     *
+     * 联调评审 4-2：必须登录后才能查询；学生只能查本人，管理员可查任意学生。
      */
-    public boolean isStudentHired(Long jobId, Long userId) {
+    public boolean isStudentHired(String token, Long jobId, Long userId) {
+        AuthClient.Session session = authGuard.requireLogin(token);
+        if (session.roleId() == Roles.STUDENT && !session.userId().equals(userId)) {
+            throw new BusinessException(403, "权限不足：只能查询本人的录用状态");
+        }
         return applyRepository.findByJobIdAndUserId(jobId, userId)
                 .map(apply -> apply.getStatus() == ApplyStatus.HIRED)
                 .orElse(false);
@@ -159,7 +165,7 @@ public class ApplyService {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new BusinessException(400, "岗位不存在：id=" + jobId));
         if (session.roleId() == Roles.DEPT_ADMIN) {
-            AuthGuard.Operator operator = authGuard.requireDeptAdmin(session);
+            AuthGuard.Operator operator = authGuard.requireDeptAdmin(token, session);
             if (!job.getDeptId().equals(operator.deptId())) {
                 throw new BusinessException(403, "权限不足：只能查看本部门（部门 " + operator.deptId() + "）岗位的申请");
             }

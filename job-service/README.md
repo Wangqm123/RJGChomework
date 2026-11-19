@@ -25,12 +25,29 @@
 | 项 | 值 |
 |---|---|
 | 端口 | **8082**（全组约定：auth=8081 / job=8082 / attendance=8083） |
-| 依赖服务 | 权限服务 `http://localhost:8081`（配置项 `auth.service.base-url`） |
+| 依赖服务 | 权限服务 `http://localhost:8081`（配置项 `auth.service.base-url`，可用环境变量 `AUTH_SERVICE_BASE_URL` 覆盖，无需改配置文件） |
 | 数据库 | 默认 H2 文件库 `./data/jobdb`（零安装），可切 MySQL |
 | JDK | 17+（父工程 Spring Boot 3.3.5） |
 
 **启动顺序：先启权限服务，再启本服务**。权限服务没启动时，
 本服务的登录类接口会返回 500 +「权限服务暂不可用」的友好提示，不会崩溃。
+
+**多机部署（联调评审 4-1）**：权限服务地址不写死，用环境变量覆盖即可：
+
+```bash
+# Windows PowerShell
+$env:AUTH_SERVICE_BASE_URL="http://192.168.1.20:8081"
+mvn spring-boot:run
+
+# Linux / macOS
+export AUTH_SERVICE_BASE_URL=http://192.168.1.20:8081
+mvn spring-boot:run
+
+# 或启动参数
+mvn spring-boot:run -Dspring-boot.run.arguments=--auth.service.base-url=http://192.168.1.20:8081
+```
+
+`192.168.1.20` 换成实际运行权限服务那台机器的局域网 IP；不设置时默认 `http://localhost:8081`。
 
 ## 三、怎么跑起来
 
@@ -45,7 +62,7 @@ mvn spring-boot:run
 
 首次启动会自动执行 `schema.sql`（建表）+ `data.sql`（预置演示数据），幂等可重复启动。
 
-运行单元测试（33 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（36 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -72,7 +89,7 @@ mvn test
 | `/api/job/listJob` | GET | 已上架岗位列表（page/size） | 公开 | `{list, total}` |
 | `/api/job/applyJob` | POST | 学生投递岗位 | 学生本人 | `{applyId}` |
 | `/api/job/auditApply` | POST | 部门管理员审核申请 | 部门管理员（本部门） | `{status, statusName, jobStatus, jobStatusName}` |
-| `/api/job/getStudentHired` | GET | 是否被该岗位录用（工时服务调用） | 服务间调用 | `true` / `false` |
+| `/api/job/getStudentHired` | GET | 是否被该岗位录用（工时服务透传学生 Token 调用） | 需登录（透传用户 Token） | `true` / `false` |
 | `/api/job/listMyApply` | GET | 我的申请记录 | 学生本人 | 申请列表（含申请人 userId、岗位信息、审核状态） |
 
 ### 4.2 按《需求文档》和工时服务联调补充的 4 个接口（接口文档初稿未列出）
@@ -82,7 +99,7 @@ mvn test
 | `/api/job/updateJob` | POST | 修改岗位（被驳回的岗位修改后重新送审） | 部门管理员（本部门） |
 | `/api/job/offlineJob` | POST | 下架岗位（JSON body 传 `jobId`） | 部门管理员（本部门） |
 | `/api/job/listApply` | GET | 查看某岗位的申请列表（`?jobId=`，含申请人 userId） | 部门管理员（本部门）/ 助学中心管理员 |
-| `/api/job/getJob` | GET | 岗位详情，任意状态（`?jobId=`），供工时服务核算补贴 | 服务间调用（无需 Token） |
+| `/api/job/getJob` | GET | 岗位详情，任意状态（`?jobId=`），供工时服务核算补贴 | 需登录（透传用户 Token） |
 
 > 前 3 个对应需求文档 DeptAdmin-2「修改/下架岗位」和 3.2「申请记录查询」；
 > 最后一个 `getJob` 是工时服务联调时提出的缺口：`listJob` 只返回已上架岗位，
@@ -120,16 +137,18 @@ curl -X POST http://localhost:8082/api/job/auditApply \
   -H "Content-Type: application/json" -H "token: <deptA的token>" \
   -d '{"applyId":5,"applyResult":"accept","remark":"同意录用"}'
 
-# 6. 工时服务校验录用资格
-curl "http://localhost:8082/api/job/getStudentHired?jobId=7&userId=4"
+# 6. 工时服务校验录用资格（联调评审 4-2：需透传用户 Token）
+curl "http://localhost:8082/api/job/getStudentHired?jobId=7&userId=4" \
+  -H "token: <student1的token>"
 
 # 7. 部门管理员下架岗位（jobId 走 JSON 请求体）
 curl -X POST http://localhost:8082/api/job/offlineJob \
   -H "Content-Type: application/json" -H "token: <deptA的token>" \
   -d '{"jobId":7}'
 
-# 8. 查询岗位详情（已下架/已招满岗位同样可查，供工时服务核算补贴）
-curl "http://localhost:8082/api/job/getJob?jobId=5"
+# 8. 查询岗位详情（已下架/已招满岗位同样可查，供工时服务核算补贴；需透传用户 Token）
+curl "http://localhost:8082/api/job/getJob?jobId=5" \
+  -H "token: <student1的token>"
 ```
 
 ## 五、状态机与业务规则
@@ -189,11 +208,14 @@ job-service(8082) ──GET /api/auth/checkToken────▶ auth-service(808
       │
       ▼  工时服务签到链路
 attendance-service(8083)
-   1. GET /api/auth/checkToken?token=xx         → 401 则拒绝
-   2. GET /api/job/getStudentHired?jobId&userId → false 则拒绝
-   3. GET /api/job/getJob?jobId=xx              → 取 hourSalary、deptId 核算补贴
+   1. GET /api/auth/checkToken?token=xx                    → 401 则拒绝
+   2. GET /api/job/getStudentHired?jobId&userId（请求头 token）→ false 则拒绝
+   3. GET /api/job/getJob?jobId=xx（请求头 token）           → 取 hourSalary、deptId 核算补贴
    4. 以上都通过，才允许新增签到记录
 ```
+
+> **联调评审 4-2**：`getStudentHired` 与 `getJob` 已改为必须登录（防匿名枚举），
+> 工时服务调用时必须把签到请求里收到的用户 Token 原样透传，否则返回 401。
 
 > **补贴计算注意**：`getJob` 返回的是**当前时薪**。部门管理员修改时薪后，历史月份的补贴不应被改写，
 > 建议工时服务在签到时（或月结时）把 `hourSalary` 快照存进自己的工时记录，历史结算使用快照值。
@@ -249,7 +271,7 @@ job-service
     │       ├── schema.sql                       # t_job、t_job_apply
     │       └── data.sql                         # 演示岗位与申请
     └── test/java/com/campus/job
-        └── JobServiceTests.java                 # 33 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
+        └── JobServiceTests.java                 # 36 个单元测试（业务冲突 + 越权 + 参数校验 + 乐观锁）
 ```
 
 ## 九、技术说明
@@ -257,6 +279,8 @@ job-service
 - **跨服务鉴权**：本服务不解析 JWT，统一调权限服务 `checkToken`；
   这样 Token 逻辑（过期、注销、续期）只在一处维护，符合单一职责和服务解耦；
 - **权限服务客户端超时**：连接 3s / 读取 5s，避免对方服务卡死拖垮本服务；
+- **跨服务地址可配置**：`auth.service.base-url` 默认 `http://localhost:8081`，
+  可用环境变量 `AUTH_SERVICE_BASE_URL` 或启动参数 `--auth.service.base-url=...` 覆盖，无需改配置文件，满足多机部署；
 - **事务与名额控制**：录用操作在 `@Transactional` 事务内完成"校验名额 → 申请置为已录用 → 岗位人数 +1 → 满额转招满"，
   避免出现"申请已录用但岗位未计数"的中间状态；
 - **乐观锁防并发覆盖**：`t_job.version` 与 `t_job_apply.version` + JPA `@Version`。

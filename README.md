@@ -54,6 +54,9 @@
      4. 以上都通过，才允许新增签到记录
 ```
 
+> 联调评审 4-2：岗位服务的 `getStudentHired` / `getJob` 需要透传用户 Token，匿名调用返回 401；
+> 联调评审 4-1：各服务调用地址通过环境变量配置（如 `AUTH_SERVICE_BASE_URL`），不再写死 localhost。
+
 ## 四、文档与工具索引
 
 | 文件 | 内容 | 维护人 |
@@ -118,7 +121,7 @@ mvn spring-boot:run
 |---|---|---|---|
 | `/api/auth/login` | POST | 登录，返回 token、userId、roleId、role | 所有人 |
 | `/api/auth/checkToken` | GET | 校验 Token（`?token=xx` 或请求头 `token: xx`），返回 valid、userId、role | 其他服务内部调用 |
-| `/api/auth/getUserInfo` | GET | 查用户姓名、学号、部门、角色 | 所有人 |
+| `/api/auth/getUserInfo` | GET | 查用户姓名、学号、部门、角色（Header 或 URL 参数带 token，缺失/无效返回 401） | 需登录（联调评审 3-2 起） |
 | `/api/auth/addUser` | POST | 新增用户、分配角色（Header 带 token） | 仅系统管理员 |
 
 **角色编号约定（全组统一）：** 1 学生 / 2 用工部门管理员 / 3 助学中心管理员 / 4 系统管理员
@@ -141,8 +144,8 @@ curl -X POST http://localhost:8081/api/auth/login \
 # 2. 校验 Token（岗位服务/工时服务就是这么调的）
 curl "http://localhost:8081/api/auth/checkToken?token=刚才拿到的token"
 
-# 3. 查用户信息
-curl "http://localhost:8081/api/auth/getUserInfo?userId=4"
+# 3. 查用户信息（联调评审 3-2 起需要带 token）
+curl "http://localhost:8081/api/auth/getUserInfo?userId=4&token=用户登录拿到的token"
 
 # 4. 系统管理员新增一个学生账号
 curl -X POST http://localhost:8081/api/auth/addUser \
@@ -224,8 +227,8 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - **岗位发布**（部门管理员）→ **中心审核**（上架 / 驳回）→ **学生投递** → **部门管理员录用/拒绝** → **招满 / 下架**
 - 7 个接口严格按《接口文档初稿》服务2 实现，另补充修改、下架、申请列表、岗位详情 4 个接口（`getJob` 供工时服务核算补贴）
 - 身份校验调用权限服务 `checkToken`，并调 `getUserInfo` 取 deptId 做本部门数据隔离
-- 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门）
-- 单元测试 33 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
+- 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门），两者均需透传用户 Token
+- 单元测试 36 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
 
 ## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
 

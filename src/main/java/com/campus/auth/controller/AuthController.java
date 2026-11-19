@@ -57,12 +57,18 @@ public class AuthController {
 
     /**
      * GET /api/auth/getUserInfo 根据用户 id 查询用户信息
+     * Token 放请求头（推荐）或 URL 参数均可，二选一；
+     * 缺失或无效返回 401（联调评审 3-2：涉及个人信息，必须校验 Token）
      * 请求参数：userId
      * 返回 data：用户姓名、学号、部门等
      */
     @GetMapping("/getUserInfo")
-    public ApiResponse<UserInfoResponse> getUserInfo(@RequestParam Long userId) {
-        return ApiResponse.ok(authService.getUserInfo(userId));
+    public ApiResponse<UserInfoResponse> getUserInfo(
+            @RequestHeader(value = "token", required = false) String headerToken,
+            @RequestParam(value = "token", required = false) String paramToken,
+            @RequestParam Long userId) {
+        String token = (headerToken != null && !headerToken.isBlank()) ? headerToken : paramToken;
+        return ApiResponse.ok(authService.getUserInfo(token, userId));
     }
 
     /**

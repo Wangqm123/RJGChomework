@@ -34,6 +34,14 @@ public class AuthGuard {
         return requireAnyRole(token, roleId);
     }
 
+    /**
+     * 仅要求"已登录"（任意角色），用于需要防匿名枚举的只读查询接口
+     * （联调评审 4-2：getJob / getStudentHired 不再允许匿名访问）。
+     */
+    public AuthClient.Session requireLogin(String token) {
+        return authClient.checkToken(token);
+    }
+
     /** 要求当前登录用户是若干允许角色之一（例如"部门管理员或助学中心管理员"） */
     public AuthClient.Session requireAnyRole(String token, int... allowedRoleIds) {
         AuthClient.Session session = authClient.checkToken(token);
@@ -49,15 +57,16 @@ public class AuthGuard {
 
     /** 要求当前登录用户是部门管理员，并返回其所属部门（用于本部门数据隔离） */
     public Operator requireDeptAdmin(String token) {
-        return requireDeptAdmin(requireRole(token, Roles.DEPT_ADMIN));
+        return requireDeptAdmin(token, requireRole(token, Roles.DEPT_ADMIN));
     }
 
     /**
      * 已校验过角色的场景下直接查部门，避免重复调一次 checkToken。
      * 调用方需自行保证 session.roleId() == DEPT_ADMIN。
+     * 联调评审 3-2：getUserInfo 已加 Token 校验，必须透传用户原始 Token。
      */
-    public Operator requireDeptAdmin(AuthClient.Session session) {
-        AuthClient.UserInfo info = authClient.getUserInfo(session.userId());
+    public Operator requireDeptAdmin(String token, AuthClient.Session session) {
+        AuthClient.UserInfo info = authClient.getUserInfo(session.userId(), token);
         if (info.deptId() == null || info.deptId() == 0L) {
             throw new BusinessException(403, "权限不足：当前账号未绑定部门，无法管理岗位");
         }

@@ -123,4 +123,33 @@ class AuthServiceTests {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.userId").isNumber());
     }
+
+    /** 测试 7：带 Token 查询用户信息成功（联调评审 3-2：getUserInfo 已加 Token 校验） */
+    @Test
+    void getUserInfoWithToken() throws Exception {
+        String body = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"student1\",\"password\":\"123456\"}"))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String token = com.jayway.jsonpath.JsonPath.read(body, "$.data.token");
+
+        // 请求头方式携带 token（岗位/工时服务 AuthClient 的透传方式）
+        mockMvc.perform(get("/api/auth/getUserInfo").param("userId", "4").header("token", token))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.userId").value(4))
+                .andExpect(jsonPath("$.data.username").value("student1"))
+                .andExpect(jsonPath("$.data.role").value("学生"));
+
+        // URL 参数方式携带 token（兼容手工测试）
+        mockMvc.perform(get("/api/auth/getUserInfo").param("userId", "4").param("token", token))
+                .andExpect(jsonPath("$.code").value(200));
+    }
+
+    /** 测试 8：不带 Token 查询用户信息被拦截（401）——个人信息不允许匿名查询 */
+    @Test
+    void getUserInfoDeniedWithoutToken() throws Exception {
+        mockMvc.perform(get("/api/auth/getUserInfo").param("userId", "4"))
+                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.msg").value("未登录或 Token 已失效"));
+    }
 }

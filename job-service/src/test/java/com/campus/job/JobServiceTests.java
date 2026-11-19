@@ -95,7 +95,7 @@ class JobServiceTests {
     /** 打桩：Token → 用户，用户 → 部门 */
     private void mockUser(String token, Long userId, int roleId, Long deptId) {
         when(authClient.checkToken(token)).thenReturn(new AuthClient.Session(userId, roleId));
-        when(authClient.getUserInfo(userId)).thenReturn(new AuthClient.UserInfo(userId, deptId, roleId));
+        when(authClient.getUserInfo(userId, token)).thenReturn(new AuthClient.UserInfo(userId, deptId, roleId));
     }
 
     // ==================== 岗位发布 ====================
@@ -324,15 +324,36 @@ class JobServiceTests {
 
     // ==================== 录用查询 / 我的申请 ====================
 
-    /** 工时服务调用：已录用 true，未录用/被拒 false */
+    /** 工时服务调用（透传学生 Token）：已录用 true，未录用/被拒 false */
     @Test
     void getStudentHired() throws Exception {
-        mockMvc.perform(get("/api/job/getStudentHired").param("jobId", "1").param("userId", "4"))
+        mockMvc.perform(get("/api/job/getStudentHired")
+                        .header("token", STUDENT_TOKEN)
+                        .param("jobId", "1").param("userId", "4"))
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value(true));
 
-        mockMvc.perform(get("/api/job/getStudentHired").param("jobId", "2").param("userId", "4"))
+        mockMvc.perform(get("/api/job/getStudentHired")
+                        .header("token", STUDENT_TOKEN)
+                        .param("jobId", "2").param("userId", "4"))
                 .andExpect(jsonPath("$.data").value(false));
+    }
+
+    /** 匿名调用 getStudentHired → 401（联调评审 4-2） */
+    @Test
+    void getStudentHiredRequiresToken() throws Exception {
+        mockMvc.perform(get("/api/job/getStudentHired")
+                        .param("jobId", "1").param("userId", "4"))
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /** 学生查询他人录用状态 → 403 */
+    @Test
+    void getStudentHiredForAnotherUserDenied() throws Exception {
+        mockMvc.perform(get("/api/job/getStudentHired")
+                        .header("token", STUDENT_TOKEN)
+                        .param("jobId", "1").param("userId", "5"))
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     /** 查询我的申请：只返回本人记录，带岗位信息 */
@@ -378,7 +399,9 @@ class JobServiceTests {
     /** 已下架岗位也能查到时薪、部门、状态（历史工时结算依赖，不能只查已上架列表） */
     @Test
     void getJobDetailForOfflineJob() throws Exception {
-        mockMvc.perform(get("/api/job/getJob").param("jobId", "5"))
+        mockMvc.perform(get("/api/job/getJob")
+                        .header("token", STUDENT_TOKEN)
+                        .param("jobId", "5"))
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.jobId").value(5))
                 .andExpect(jsonPath("$.data.hourSalary").value(18.0))
@@ -387,10 +410,19 @@ class JobServiceTests {
                 .andExpect(jsonPath("$.data.statusName").value("已下架"));
     }
 
+    /** 匿名调用 getJob → 401（联调评审 4-2） */
+    @Test
+    void getJobRequiresToken() throws Exception {
+        mockMvc.perform(get("/api/job/getJob").param("jobId", "5"))
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
     /** 岗位不存在 → 400 */
     @Test
     void getJobNotFound() throws Exception {
-        mockMvc.perform(get("/api/job/getJob").param("jobId", "999"))
+        mockMvc.perform(get("/api/job/getJob")
+                        .header("token", STUDENT_TOKEN)
+                        .param("jobId", "999"))
                 .andExpect(jsonPath("$.code").value(400));
     }
 
