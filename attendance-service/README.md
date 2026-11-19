@@ -28,7 +28,7 @@
 | 项 | 值 |
 |---|---|
 | 端口 | **8083**（全组约定：auth=8081 / job=8082 / attendance=8083） |
-| 依赖服务 | 权限服务（`auth.service.base-url`）、岗位服务（`job.service.base-url`），默认 `http://localhost:8081` / `http://localhost:8082`；多机部署可用环境变量 `AUTH_SERVICE_URL` / `JOB_SERVICE_URL` 覆盖 |
+| 依赖服务 | 权限服务（`auth.service.base-url`）、岗位服务（`job.service.base-url`），默认 `http://localhost:8081` / `http://localhost:8082`；多机部署可用环境变量 `AUTH_SERVICE_BASE_URL` / `JOB_SERVICE_BASE_URL` 覆盖（与 job-service 命名一致） |
 | 数据库 | 默认 H2 文件库 `./data/attendancedb`（零安装），可切 MySQL |
 | JDK | 17+（父工程 Spring Boot 3.3.5） |
 
