@@ -69,4 +69,23 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
                       @Param("remark") String remark,
                       @Param("operatorId") Long operatorId,
                       @Param("confirmTime") LocalDateTime confirmTime);
+
+    /**
+     * 签退：只有仍处于「已签到（status=0）」时才允许改，返回影响行数。
+     *
+     * 为什么用条件更新而不是"读出来改字段再 save"：两个并发签退请求都先查到 status=0，
+     * 各自 set 字段再 save，后写的会覆盖先写的（把已签退的工时又改一遍，金额/工时错乱）。
+     * 带 `AND status = 0` 的 UPDATE 是原子的，第二次影响 0 行，调用方据此提示"已被签退"，
+     * 与核实 markConfirmed、发放 markPaid 是同一套并发防护思路，不需要悲观锁。
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AttendanceRecord r SET r.status = :newStatus, r.checkOutTime = :checkOutTime, "
+            + "r.workMinutes = :workMinutes, r.remark = :remark, r.activeKey = null, r.updateTime = :updateTime "
+            + "WHERE r.id = :id AND r.status = 0")
+    int markCheckedOut(@Param("id") Long id,
+                       @Param("newStatus") Integer newStatus,
+                       @Param("checkOutTime") LocalDateTime checkOutTime,
+                       @Param("workMinutes") Integer workMinutes,
+                       @Param("remark") String remark,
+                       @Param("updateTime") LocalDateTime updateTime);
 }

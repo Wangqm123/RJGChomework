@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -92,7 +93,7 @@ class SettlementServiceTests {
                 default -> throw new BusinessException(401, "未登录或 Token 已失效");
             };
         });
-        when(authClient.getUserInfo(anyLong())).thenAnswer(inv -> {
+        when(authClient.getUserInfo(anyLong(), anyString())).thenAnswer(inv -> {
             Long userId = inv.getArgument(0);
             return switch (userId.intValue()) {
                 case 2 -> new AuthClient.UserInfo(2L, "图书馆管理员", 1L, 2);

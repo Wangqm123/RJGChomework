@@ -37,8 +37,10 @@ public class AttendanceService {
     /** 单次工时上限：超过 12 小时标记为异常待确认，人工核实后才计薪 */
     private static final int MAX_WORK_MINUTES = 12 * 60;
 
-    /** 岗位已下架（与岗位服务 JobStatus 字典一致），下架岗位不能继续签到 */
-    private static final int JOB_OFFLINE = 5;
+    /** 岗位状态字典（与岗位服务 JobStatus 一致，见 job-service/common/JobStatus）：
+     *  0 草稿 / 1 待中心审核 / 2 已上架 / 3 已驳回 / 4 已招满 / 5 已下架 */
+    private static final int JOB_LISTED = 2;   // 已上架：可正常签到
+    private static final int JOB_FULL = 4;     // 已招满：已录用学生仍可签到（录用关系在招满前已建立）
 
     /** "我的记录"默认每页条数与上限：不传就按 20 条/页，防止一次拉出整月几百条把前端拖死 */
     private static final int DEFAULT_PAGE_SIZE = 20;
@@ -67,8 +69,11 @@ public class AttendanceService {
 
         // 关 1：岗位必须存在（不存在时岗位服务返回 400，这里原样透传提示）
         JobClient.JobInfo job = jobClient.getJob(jobId);
-        if (job.status() != null && job.status() == JOB_OFFLINE) {
-            throw new BusinessException(400, "岗位已下架，无法签到");
+        // 只允许「已上架(2)」「已招满(4)」两种状态签到：
+        // 草稿(0)/待审核(1) 尚未发布、已驳回(3) 审核不过、已下架(5) 主动下架，都不能打卡。
+        // 已招满的岗位仍允许「已被录用」的学生签到（录用关系在招满前已建立，招满只影响新投递）。
+        if (job.status() != null && job.status() != JOB_LISTED && job.status() != JOB_FULL) {
+            throw new BusinessException(400, "岗位当前不可签到（" + jobStatusName(job.status()) + "）");
         }
 
         // 关 1.5：岗位数据必须完整。deptId/hourSalary 是快照的来源，缺了会写出"部门 0、时薪 0"的
@@ -146,14 +151,17 @@ public class AttendanceService {
 
         int workMinutes = (int) minutes;
         boolean abnormal = workMinutes > MAX_WORK_MINUTES;
+        int target = abnormal ? AttendanceStatus.ABNORMAL : AttendanceStatus.CHECKED_OUT;
+        String remark = abnormal ? "单次工时超过 12 小时，需管理员核实后计薪" : null;
 
-        record.setCheckOutTime(now);
-        record.setWorkMinutes(workMinutes);
-        record.setStatus(abnormal ? AttendanceStatus.ABNORMAL : AttendanceStatus.CHECKED_OUT);
-        record.setRemark(abnormal ? "单次工时超过 12 小时，需管理员核实后计薪" : null);
-        // 释放排他键：签退后该岗位可以再次签到（历史多次打卡记录不受唯一索引影响）
-        record.setActiveKey(null);
-        recordRepository.save(record);
+        // 条件更新兜底并发：两个并发签退请求都先查到 status=0，若都走"读-改-写"会互相覆盖，
+        // 导致一条签到被签退两次、工时/金额错乱。带 `AND status = 0` 的 UPDATE 是原子的，
+        // 只有一个请求能影响 1 行，另一个影响 0 行 → 400，与核实/发放是同一套防护思路。
+        int affected = recordRepository.markCheckedOut(
+                record.getId(), target, now, workMinutes, remark, now);
+        if (affected == 0) {
+            throw new BusinessException(400, "该签到记录已被签退，请勿重复操作");
+        }
 
         String tip = abnormal
                 ? "本次工时超过 12 小时，已标记为异常待确认，核实通过后才计入补贴"
@@ -166,8 +174,8 @@ public class AttendanceService {
                 workMinutes,
                 CalcUtils.workHours(workMinutes),
                 CalcUtils.amount(workMinutes, record.getHourSalary()),
-                record.getStatus(),
-                AttendanceStatus.nameOf(record.getStatus()),
+                target,
+                AttendanceStatus.nameOf(target),
                 tip);
     }
 
@@ -260,7 +268,7 @@ public class AttendanceService {
 
         // 部门管理员只能核实自己部门的记录；中心管理员不限制部门
         if (session.roleId() == Roles.DEPT_ADMIN) {
-            Long ownDeptId = authGuard.requireDeptAdmin(session).deptId();
+            Long ownDeptId = authGuard.requireDeptAdmin(token, session).deptId();
             if (!ownDeptId.equals(record.getDeptId())) {
                 throw new BusinessException(403, "权限不足：只能核实本部门的工时记录");
             }
@@ -305,5 +313,21 @@ public class AttendanceService {
                 session.userId(),
                 confirmTime,
                 tip);
+    }
+
+    /** 岗位状态码转中文（仅用于签到拦截时的友好提示，与岗位服务 JobStatus.nameOf 对齐） */
+    private String jobStatusName(Integer status) {
+        if (status == null) {
+            return "未知状态";
+        }
+        return switch (status) {
+            case 0 -> "草稿";
+            case 1 -> "待中心审核";
+            case 2 -> "已上架";
+            case 3 -> "已驳回";
+            case 4 -> "已招满";
+            case 5 -> "已下架";
+            default -> "未知状态";
+        };
     }
 }

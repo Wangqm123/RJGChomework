@@ -24,12 +24,16 @@ spring:
       path: /h2-console
 
 # 依赖服务的地址（跨服务调用）
+# 通过环境变量注入，支持多机部署：默认回退到本机 localhost，
+# 多机部署时用 AUTH_SERVICE_URL / JOB_SERVICE_URL 指向目标机器
+#   AUTH_SERVICE_URL=http://192.168.x.x:8081
+#   JOB_SERVICE_URL=http://192.168.x.x:8082
 auth:
   service:
-    base-url: http://localhost:8081   # 权限服务：校验 Token、查用户部门/姓名
+    base-url: ${AUTH_SERVICE_URL:http://localhost:8081}   # 权限服务：校验 Token、查用户部门/姓名
 job:
   service:
-    base-url: http://localhost:8082   # 岗位服务：查询录用资格、岗位时薪与所属部门
+    base-url: ${JOB_SERVICE_URL:http://localhost:8082}   # 岗位服务：查询录用资格、岗位时薪与所属部门
 
 logging:
   level:

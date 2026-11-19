@@ -28,7 +28,7 @@
 | 项 | 值 |
 |---|---|
 | 端口 | **8083**（全组约定：auth=8081 / job=8082 / attendance=8083） |
-| 依赖服务 | 权限服务 `http://localhost:8081`（`auth.service.base-url`）、岗位服务 `http://localhost:8082`（`job.service.base-url`） |
+| 依赖服务 | 权限服务（`auth.service.base-url`）、岗位服务（`job.service.base-url`），默认 `http://localhost:8081` / `http://localhost:8082`；多机部署可用环境变量 `AUTH_SERVICE_URL` / `JOB_SERVICE_URL` 覆盖 |
 | 数据库 | 默认 H2 文件库 `./data/attendancedb`（零安装），可切 MySQL |
 | JDK | 17+（父工程 Spring Boot 3.3.5） |
 
@@ -72,7 +72,7 @@ java -jar target/attendance-service-1.0.0.jar
 （JDBC URL 必须与配置完全一致：`jdbc:h2:file:./data/attendancedb;MODE=MySQL;AUTO_SERVER=TRUE`，
 用户 sa，密码空；少了 `MODE/AUTO_SERVER` 两个参数会因文件锁连不上）。
 
-运行单元测试（45 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（46 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -181,7 +181,8 @@ curl -X POST http://localhost:8083/api/attendance/confirmAbnormal \
 2. 调权限服务 checkToken          → 无效：401，拿到 userId
 3. 角色是学生吗？                  → 不是：403
 4. 调岗位服务 getJob              → 岗位不存在：400
-5. 岗位已下架（status=5）？        → 是：400
+5. 岗位状态是「已上架(2)」或「已招满(4)」？ → 不是：400「岗位当前不可签到（xx）」
+   （草稿/待审核/已驳回/已下架都不能打卡；已招满仍允许已录用的学生签到）
 6. 岗位缺 deptId / 时薪？          → 是：500「岗位数据异常」，不落"部门 0、时薪 0"的脏记录
 7. 调岗位服务 getStudentHired     → false：400「您未被该岗位录用，无法签到」
 8. 本岗位已有未签退记录？          → 有：400「请先签退」
@@ -277,7 +278,8 @@ curl -X POST http://localhost:8083/api/attendance/confirmAbnormal \
 | 同一岗位重复签到（未签退） | 400「您在该岗位已签到且未签退，请先签退」 |
 | 没签到直接签退 | 400「未找到该岗位的签到记录，请先签到」 |
 | 签到不足 1 分钟就签退 | 400 |
-| 岗位已下架 | 400「岗位已下架，无法签到」 |
+| 并发签退同一条记录 | 400「该签到记录已被签退，请勿重复操作」 |
+| 岗位状态不可签到（草稿/待审核/已驳回/已下架） | 400「岗位当前不可签到（已下架）」等 |
 | 岗位不存在 | 400「岗位不存在」（透传岗位服务提示） |
 | 岗位数据不完整（缺 deptId / 时薪） | 500「岗位数据异常：未取到所属部门/时薪」 |
 | 月份格式错（如 2026-13） | 400「月份格式应为 yyyy-MM，例如 2026-11」 |
@@ -313,7 +315,7 @@ attendance-service
 ├── pom.xml
 ├── README.md
 ├── 演示脚本.md                                    # 现场演示 9 步（成员 6 用）
-├── 测试与缺陷记录.md                              # 45 条用例 + 4 个缺陷 + 交付前复审清单
+├── 测试与缺陷记录.md                              # 46 条用例 + 4 个缺陷 + 交付前复审清单
 ├── scripts
 │   ├── smoke_test.py                              # 三服务联调 37 场景（含结算、发放、分页、核实权限）
 │   └── degrade_test.py                            # 依赖服务离线降级验证
@@ -339,7 +341,7 @@ attendance-service
     │       ├── schema.sql                           # 建表语句（含并发约束与发放单唯一键）
     │       └── data.sql                             # 造数说明（不预置记录）
     └── test/java/com/campus/attendance
-        ├── AttendanceServiceTests.java              # 28 个业务规则用例（TC-01~TC-19、TC-21~TC-23、TC-40~TC-45）
+        ├── AttendanceServiceTests.java              # 29 个业务规则用例（TC-01~TC-19、TC-21~TC-23、TC-40~TC-46）
         ├── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
         └── SettlementServiceTests.java              # 16 个结算/发放用例（TC-24~TC-39）
 ```
@@ -347,6 +349,7 @@ attendance-service
 ## 九、技术说明
 
 - **跨服务鉴权**：本服务不解析 JWT，统一调权限服务 `checkToken`，Token 逻辑只在一处维护；
+  查用户信息 `getUserInfo` 也透传用户原始 Token（联调评审 3-2：该接口已加 Token 校验，缺失或无效返回 401）。
 - **超时保护**：`RestTemplate` 连接 3s / 读取 5s，对方服务卡死不会拖垮本服务；
 - **快照设计**：签到即冻结时薪与部门，历史工资不受调薪影响，汇总也不必跨服务查询；
 - **金额精度**：`BigDecimal` + 精确分钟计算；每条记录先取整到分再累加，
@@ -354,6 +357,9 @@ attendance-service
 - **并发防重**：`active_key`（未签退时 = `userId:jobId`，签退置 NULL）+ 唯一约束 `uk_att_active`，
   由数据库拦下并发重复签到；业务层先查重只作友好提示。选择这一方案而不是进程内锁，
   是因为它天然支持多实例部署，且不影响同一岗位的历史多次打卡记录。
+- **签退并发保护**：签退用条件更新 `UPDATE ... WHERE id=? AND status=0`，只有仍为「已签到」的才改，
+  两个并发签退只有一个影响 1 行、另一个 0 行 → 400，不会把一条签到结算两次（工时/金额错乱），
+  与核实、发放用的是同一套思路，不需要悲观锁。
 - **结算幂等**：发放单唯一键 `(user_id, dept_id, settle_month)`，重复结算只能刷新不能新增；
   并发结算由唯一键兜底，冲突时整体回滚并提示重试，不会出现两张单重复发钱。
 - **发放幂等**：用条件更新 `UPDATE ... WHERE status=0`，只有仍为待发放的才改成已发放，

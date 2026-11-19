@@ -85,7 +85,7 @@ public class SubsidyService {
 
         return new MonthSubsidyView(
                 session.userId(),
-                safeUserName(session.userId()),
+                safeUserName(session.userId(), token),
                 range.month(),
                 records.size(),
                 CalcUtils.workHours(minutes),
@@ -120,7 +120,7 @@ public class SubsidyService {
         Long deptId;
         if (session.roleId() == Roles.DEPT_ADMIN) {
             // deptId 一律从权限服务取，前端传什么都不作数（防越权）
-            Long ownDeptId = authGuard.requireDeptAdmin(session).deptId();
+            Long ownDeptId = authGuard.requireDeptAdmin(token, session).deptId();
             if (deptIdParam != null && !deptIdParam.equals(ownDeptId)) {
                 throw new BusinessException(403, "权限不足：只能查看本部门的工时汇总");
             }
@@ -155,7 +155,7 @@ public class SubsidyService {
             totalAmount = totalAmount.add(amount);
             people.add(new PersonSummary(
                     entry.getKey(),
-                    safeUserName(entry.getKey()),
+                    safeUserName(entry.getKey(), token),
                     entry.getValue().size(),
                     CalcUtils.workHours(minutes),
                     CalcUtils.money(amount)));
@@ -225,9 +225,9 @@ public class SubsidyService {
      * 取用户姓名用于展示。
      * 汇总类接口不该因为权限服务偶尔查不到某个用户就整体失败，所以这里降级为空字符串。
      */
-    private String safeUserName(Long userId) {
+    private String safeUserName(Long userId, String token) {
         try {
-            return authClient.getUserInfo(userId).name();
+            return authClient.getUserInfo(userId, token).name();
         } catch (RuntimeException e) {
             log.warn("查询用户姓名失败，userId={}，降级为空", userId);
             return "";

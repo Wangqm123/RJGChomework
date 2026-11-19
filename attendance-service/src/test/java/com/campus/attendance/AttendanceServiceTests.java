@@ -23,6 +23,7 @@ import java.time.YearMonth;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
@@ -98,7 +99,7 @@ class AttendanceServiceTests {
         });
 
         // 用户信息：模拟权限服务 getUserInfo（部门 1 的管理员、学生姓名等）
-        when(authClient.getUserInfo(anyLong())).thenAnswer(inv -> {
+        when(authClient.getUserInfo(anyLong(), anyString())).thenAnswer(inv -> {
             Long userId = inv.getArgument(0);
             return switch (userId.intValue()) {
                 case 2 -> new AuthClient.UserInfo(2L, "图书馆管理员", DEPT_ID, 2);
@@ -125,6 +126,14 @@ class AttendanceServiceTests {
             // 岗位 3：岗位存在但上游没给时薪（hourSalary=null），用于验证"不落 0 元时薪的记录"
             if (jobId != null && jobId == 3L) {
                 return new JobClient.JobInfo(3L, "缺少时薪的岗位", null, DEPT_ID, 2);
+            }
+            // 岗位 5：已下架（status=5），用于验证白名单拦截——非法状态不允许签到
+            if (jobId != null && jobId == 5L) {
+                return new JobClient.JobInfo(5L, "校园快递代取", new BigDecimal("18.00"), DEPT_ID, 5);
+            }
+            // 岗位 6：待中心审核（status=1），同样是白名单外的非法状态
+            if (jobId != null && jobId == 6L) {
+                return new JobClient.JobInfo(6L, "待审核岗位", new BigDecimal("20.00"), DEPT_ID, 1);
             }
             throw new BusinessException(400, "岗位不存在");
         });
@@ -601,6 +610,29 @@ class AttendanceServiceTests {
                 .andExpect(jsonPath("$.code").value(500))
                 .andExpect(jsonPath("$.msg").value("岗位数据异常：未取到时薪，暂不能签到，请联系管理员"));
 
+        org.assertj.core.api.Assertions.assertThat(recordRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("TC-46 岗位状态非法（已下架/待审核）时签到：400，白名单只放行已上架与已招满")
+    void tc46_checkInIllegalJobStatus() throws Exception {
+        // 已下架（status=5）：评审表 5-4 要求从"只拦下架"改为白名单，下架仍应被拦
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":5}"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("岗位当前不可签到（已下架）"));
+
+        // 待中心审核（status=1）：原本会放行（只拦下架），白名单化后必须拦
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":6}"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("岗位当前不可签到（待中心审核）"));
+
+        // 两个非法状态都不该落库
         org.assertj.core.api.Assertions.assertThat(recordRepository.count()).isZero();
     }
 

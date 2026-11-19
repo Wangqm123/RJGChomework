@@ -92,7 +92,7 @@ public class SettlementService {
                 throw new BusinessException(400, "该月没有可结算的已签退工时记录，无法生成发放单");
             }
             List<SubsidyView> views = existed.stream()
-                    .map(s -> SubsidyView.from(s, safeUserName(s.getUserId())))
+                    .map(s -> SubsidyView.from(s, safeUserName(s.getUserId(), token)))
                     .toList();
             return new SettleResult(range.month(), deptIdParam, views.size(),
                     0, 0, 0, CalcUtils.workHours(0), CalcUtils.money(BigDecimal.ZERO), views);
@@ -130,7 +130,7 @@ public class SettlementService {
                     && subsidy.getStatus() == SubsidyStatus.PAID) {
                 // 钱已经打了，金额冻结：不刷新、不计入本次合计，只回显
                 skipped++;
-                views.add(SubsidyView.from(subsidy, safeUserName(userId)));
+                views.add(SubsidyView.from(subsidy, safeUserName(userId, token)));
                 continue;
             }
 
@@ -167,7 +167,7 @@ public class SettlementService {
             }
             writtenMinutes += minutes;
             writtenAmount = writtenAmount.add(amount);
-            views.add(SubsidyView.from(subsidy, safeUserName(userId)));
+            views.add(SubsidyView.from(subsidy, safeUserName(userId, token)));
         }
 
         log.info("月度结算完成：month={}, deptId={}, created={}, refreshed={}, skipped={}",
@@ -226,7 +226,7 @@ public class SettlementService {
 
         Long deptId;
         if (session.roleId() == Roles.DEPT_ADMIN) {
-            Long ownDeptId = authGuard.requireDeptAdmin(session).deptId();
+            Long ownDeptId = authGuard.requireDeptAdmin(token, session).deptId();
             if (deptIdParam != null && !deptIdParam.equals(ownDeptId)) {
                 throw new BusinessException(403, "权限不足：只能查看本部门的补贴发放单");
             }
@@ -237,7 +237,7 @@ public class SettlementService {
 
         return queryByMonthAndDept(settleMonth, deptId).stream()
                 .filter(s -> status == null || (s.getStatus() != null && s.getStatus().equals(status)))
-                .map(s -> SubsidyView.from(s, safeUserName(s.getUserId())))
+                .map(s -> SubsidyView.from(s, safeUserName(s.getUserId(), token)))
                 .toList();
     }
 
@@ -252,9 +252,9 @@ public class SettlementService {
      * 取用户姓名用于展示。
      * 发放单列表不该因为权限服务偶尔查不到某个人就整体失败，所以这里降级为空字符串。
      */
-    private String safeUserName(Long userId) {
+    private String safeUserName(Long userId, String token) {
         try {
-            AuthClient.UserInfo info = authClient.getUserInfo(userId);
+            AuthClient.UserInfo info = authClient.getUserInfo(userId, token);
             return info == null ? "" : info.name();
         } catch (RuntimeException e) {
             log.warn("查询用户姓名失败，userId={}，降级为空", userId);
