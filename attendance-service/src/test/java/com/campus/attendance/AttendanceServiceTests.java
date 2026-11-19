@@ -230,6 +230,23 @@ class AttendanceServiceTests {
     }
 
     @Test
+    @DisplayName("TC-47 岗位服务 Token 失效返回 401：签到原样透传 401，不误报为 500")
+    void tc47_jobServiceTokenExpired() throws Exception {
+        // 4-2 起岗位服务的 getJob/getStudentHired 需要登录。若学生 Token 在岗位服务侧已失效，
+        // 必须把 401 原样透传给前端（引导重新登录），不能笼统报成「服务不可用 500」——
+        // 否则用户会以为服务挂了，而实际只是需要重新登录。
+        doThrow(new BusinessException(401, "未登录或 Token 已失效"))
+                .when(jobClient).getJob(eq(JOB_ID), anyString());
+
+        mockMvc.perform(post("/api/attendance/checkIn")
+                        .header("token", STUDENT_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"jobId\":1}"))
+                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.msg").value("未登录或 Token 已失效"));
+    }
+
+    @Test
     @DisplayName("TC-18 权限服务不可用：500 友好提示，不误判为未登录")
     void tc18_authServiceDown() throws Exception {
         // AuthClient 内部已把 RestClientException 转成 500「权限服务暂不可用」；

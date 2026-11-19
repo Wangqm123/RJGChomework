@@ -248,7 +248,7 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - **结算与发放闭环**：`settle` 把某月已签退工时固化成发放单（表 `t_subsidy`），`pay` 批量标记已发放；
   一人一月一部门一张单（唯一键 `(user_id, dept_id, settle_month)`），重复结算只刷新不新增，
   已发放金额冻结；发放用 `WHERE status=0` 条件更新，重复点不会重复计数
-- 单元测试 **46 个**（`cd attendance-service && mvn test`），覆盖未录用拦截、重复签到、异常工时与核实、
+- 单元测试 **47 个**（`cd attendance-service && mvn test`），覆盖未录用拦截、重复签到、异常工时与核实、
   记录分页、岗位数据缺失拦截、跨部门越权、权限/岗位服务降级、**并发签到防重**（唯一约束 `uk_att_active` 兜底）、
   结算幂等 / 已发放冻结 / 跨部门拆单 / 发放幂等
 - **三服务联调 37 个场景全部通过**（`python attendance-service/scripts/smoke_test.py`，需 8081/8082/8083 同时在线）：

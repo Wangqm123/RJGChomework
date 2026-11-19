@@ -72,7 +72,7 @@ java -jar target/attendance-service-1.0.0.jar
 （JDBC URL 必须与配置完全一致：`jdbc:h2:file:./data/attendancedb;MODE=MySQL;AUTO_SERVER=TRUE`，
 用户 sa，密码空；少了 `MODE/AUTO_SERVER` 两个参数会因文件锁连不上）。
 
-运行单元测试（46 个用例，使用独立内存库，不影响开发数据）：
+运行单元测试（47 个用例，使用独立内存库，不影响开发数据）：
 
 ```bash
 mvn test
@@ -315,7 +315,7 @@ attendance-service
 ├── pom.xml
 ├── README.md
 ├── 演示脚本.md                                    # 现场演示 9 步（成员 6 用）
-├── 测试与缺陷记录.md                              # 46 条用例 + 4 个缺陷 + 交付前复审清单
+├── 测试与缺陷记录.md                              # 47 条用例 + 4 个缺陷 + 交付前复审清单
 ├── scripts
 │   ├── smoke_test.py                              # 三服务联调 37 场景（含结算、发放、分页、核实权限）
 │   └── degrade_test.py                            # 依赖服务离线降级验证
@@ -341,7 +341,7 @@ attendance-service
     │       ├── schema.sql                           # 建表语句（含并发约束与发放单唯一键）
     │       └── data.sql                             # 造数说明（不预置记录）
     └── test/java/com/campus/attendance
-        ├── AttendanceServiceTests.java              # 29 个业务规则用例（TC-01~TC-19、TC-21~TC-23、TC-40~TC-46）
+        ├── AttendanceServiceTests.java              # 30 个业务规则用例（TC-01~TC-19、TC-21~TC-23、TC-40~TC-47）
         ├── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
         └── SettlementServiceTests.java              # 16 个结算/发放用例（TC-24~TC-39）
 ```

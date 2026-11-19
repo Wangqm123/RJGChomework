@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -90,21 +94,6 @@ public class JobClient {
                 data.path("status").asInt());
     }
 
-    /** 统一的 GET 调用与网络异常包装 */
-    private JsonNode get(String pathAndQuery, Object... uriVars) {
-        String url = baseUrl + pathAndQuery;
-        try {
-            JsonNode body = restTemplate.getForObject(url, JsonNode.class, uriVars);
-            if (body == null) {
-                throw new BusinessException(500, "岗位服务返回内容为空");
-            }
-            return body;
-        } catch (RestClientException e) {
-            log.error("调用岗位服务失败：{}", url, e);
-            throw new BusinessException(500, "岗位服务暂不可用（未启动或网络不通），请稍后重试");
-        }
-    }
-
     /**
      * 带 token 请求头的 GET 调用。
      * 联调评审 4-2：岗位服务的 getJob / getStudentHired 已改为必须登录，匿名返回 401，
@@ -114,14 +103,12 @@ public class JobClient {
     private JsonNode getWithToken(String pathAndQuery, String token, Object... uriVars) {
         String url = baseUrl + pathAndQuery;
         try {
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            HttpHeaders headers = new HttpHeaders();
             if (token != null && !token.isBlank()) {
                 headers.set("token", token);
             }
-            org.springframework.http.HttpEntity<Void> entity =
-                    new org.springframework.http.HttpEntity<>(headers);
-            org.springframework.http.ResponseEntity<JsonNode> resp =
-                    restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, entity, JsonNode.class, uriVars);
+            ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class, uriVars);
             JsonNode body = resp.getBody();
             if (body == null) {
                 throw new BusinessException(500, "岗位服务返回内容为空");
