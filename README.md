@@ -54,6 +54,9 @@
      4. 以上都通过，才允许新增签到记录
 ```
 
+> 联调评审 4-2：岗位服务的 `getStudentHired` / `getJob` 需要透传用户 Token，匿名调用返回 401；
+> 联调评审 4-1：各服务调用地址通过环境变量配置（如 `AUTH_SERVICE_BASE_URL`），不再写死 localhost。
+
 ## 四、文档与工具索引
 
 | 文件 | 内容 | 维护人 |
@@ -224,8 +227,8 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 - **岗位发布**（部门管理员）→ **中心审核**（上架 / 驳回）→ **学生投递** → **部门管理员录用/拒绝** → **招满 / 下架**
 - 7 个接口严格按《接口文档初稿》服务2 实现，另补充修改、下架、申请列表、岗位详情 4 个接口（`getJob` 供工时服务核算补贴）
 - 身份校验调用权限服务 `checkToken`，并调 `getUserInfo` 取 deptId 做本部门数据隔离
-- 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门）
-- 单元测试 33 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
+- 对工时服务提供 `GET /api/job/getStudentHired`（录用判断）和 `GET /api/job/getJob`（时薪/部门），两者均需透传用户 Token
+- 单元测试 36 个（业务冲突 + 越权 + 参数校验 + 乐观锁），`cd job-service && mvn test`
 
 ## 七、服务三：工时考勤与补贴核算服务（attendance-service，8083）
 

@@ -100,8 +100,11 @@ public class JobService {
      * 给工时服务核算补贴/判断岗位状态使用：
      * 已招满、已下架的历史岗位查不到会影响历史工时结算，
      * 所以这里不限制 status，由调用方根据返回的 status 自行判断。
+     *
+     * 联调评审 4-2：必须登录后查询，避免匿名枚举岗位信息（含驳回理由）。
      */
-    public JobView getJob(Long jobId) {
+    public JobView getJob(String token, Long jobId) {
+        authGuard.requireLogin(token);
         return JobView.from(getJobOrThrow(jobId));
     }
 

@@ -26,8 +26,12 @@ spring:
 # 权限服务地址（跨服务调用）
 auth:
   service:
-    # 本机联调填 localhost；跨机器演示时改成运行权限服务那台机器的局域网 IP
-    base-url: http://localhost:8081
+    # 多机部署时不要改这个文件，用环境变量覆盖即可：
+    #   Windows PowerShell:  $env:AUTH_SERVICE_BASE_URL="http://192.168.1.20:8081"
+    #   Linux / macOS:       export AUTH_SERVICE_BASE_URL=http://192.168.1.20:8081
+    #   或启动参数:          java -jar job-service.jar --auth.service.base-url=http://192.168.1.20:8081
+    # 未设置时默认本机 8081，保证单人开发开箱即用
+    base-url: ${AUTH_SERVICE_BASE_URL:http://localhost:8081}
 
 logging:
   level:

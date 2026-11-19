@@ -34,6 +34,14 @@ public class AuthGuard {
         return requireAnyRole(token, roleId);
     }
 
+    /**
+     * 仅要求"已登录"（任意角色），用于需要防匿名枚举的只读查询接口
+     * （联调评审 4-2：getJob / getStudentHired 不再允许匿名访问）。
+     */
+    public AuthClient.Session requireLogin(String token) {
+        return authClient.checkToken(token);
+    }
+
     /** 要求当前登录用户是若干允许角色之一（例如"部门管理员或助学中心管理员"） */
     public AuthClient.Session requireAnyRole(String token, int... allowedRoleIds) {
         AuthClient.Session session = authClient.checkToken(token);
