@@ -64,8 +64,13 @@ public class AuthService {
 
     /**
      * 需求 3：查询用户信息
+     * 联调评审 3-2：本接口返回姓名/学号/部门等个人信息，必须先校验 Token；
+     * 业务服务（岗位/工时）调用时需透传用户的原始 Token。
      */
-    public UserInfoResponse getUserInfo(Long userId) {
+    public UserInfoResponse getUserInfo(String token, Long userId) {
+        if (tokenService.validate(token) == null) {
+            throw new BusinessException(401, "未登录或 Token 已失效");
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(400, "用户不存在"));
         UserInfoResponse resp = new UserInfoResponse();

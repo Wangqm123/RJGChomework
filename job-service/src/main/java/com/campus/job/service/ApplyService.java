@@ -159,7 +159,7 @@ public class ApplyService {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new BusinessException(400, "岗位不存在：id=" + jobId));
         if (session.roleId() == Roles.DEPT_ADMIN) {
-            AuthGuard.Operator operator = authGuard.requireDeptAdmin(session);
+            AuthGuard.Operator operator = authGuard.requireDeptAdmin(token, session);
             if (!job.getDeptId().equals(operator.deptId())) {
                 throw new BusinessException(403, "权限不足：只能查看本部门（部门 " + operator.deptId() + "）岗位的申请");
             }

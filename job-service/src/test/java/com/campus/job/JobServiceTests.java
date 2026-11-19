@@ -95,7 +95,7 @@ class JobServiceTests {
     /** 打桩：Token → 用户，用户 → 部门 */
     private void mockUser(String token, Long userId, int roleId, Long deptId) {
         when(authClient.checkToken(token)).thenReturn(new AuthClient.Session(userId, roleId));
-        when(authClient.getUserInfo(userId)).thenReturn(new AuthClient.UserInfo(userId, deptId, roleId));
+        when(authClient.getUserInfo(userId, token)).thenReturn(new AuthClient.UserInfo(userId, deptId, roleId));
     }
 
     // ==================== 岗位发布 ====================

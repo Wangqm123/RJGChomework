@@ -353,9 +353,10 @@ async function quickLogin(u) {
 async function checkStatus() {
   const dot = document.getElementById('dot'), txt = document.getElementById('statusText');
   try {
-    const j = await (await fetch(BASE + '/getUserInfo?userId=1')).json();
-    dot.className = 'dot ' + (j.code === 200 ? 'on' : 'off');
-    txt.textContent = j.code === 200 ? '已连接 localhost:8081' : '服务响应异常';
+    // 用 checkToken 探活：只要服务有 JSON 响应即视为在线（401 也说明服务活着）
+    const j = await (await fetch(BASE + '/checkToken?token=ping')).json();
+    dot.className = 'dot on';
+    txt.textContent = '已连接 localhost:8081';
   } catch (e) {
     dot.className = 'dot off';
     txt.textContent = '未连接 · 请先启动服务';
@@ -445,7 +446,7 @@ async function doCheckBad() {
 async function doGetUser() {
   const id = document.getElementById('uidInput').value.trim() || '1';
   try {
-    const { j, ms } = await api(BASE + '/getUserInfo?userId=' + id);
+    const { j, ms } = await api(BASE + '/getUserInfo?userId=' + id + '&token=' + encodeURIComponent(TOKEN || ''));
     show('userResp', fmt(j), j.code, ms);
   } catch (e) { show('userResp', '// 请求失败：' + e.message); }
 }
@@ -510,8 +511,8 @@ async function runDemo() {
     j = await (await fetch(BASE + '/checkToken?token=' + adminToken)).json();
     logLine('GET', P('checkToken'), 200, 'Token 验签通过 → userId=' + j.data.userId + ' 角色=' + j.data.role, fmt(j));
 
-    j = await (await fetch(BASE + '/getUserInfo?userId=' + j.data.userId)).json();
-    logLine('GET', P('getUserInfo'), 200, '查询用户信息', fmt(j));
+    j = await (await fetch(BASE + '/getUserInfo?userId=' + j.data.userId + '&token=' + encodeURIComponent(adminToken))).json();
+    logLine('GET', P('getUserInfo'), 200, '查询用户信息（透传 Token，联调评审 3-2）', fmt(j));
 
     let r = await fetch(BASE + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'student1', password: '123456' }) });
     const stuToken = (await r.json()).data.token;

@@ -118,7 +118,7 @@ mvn spring-boot:run
 |---|---|---|---|
 | `/api/auth/login` | POST | 登录，返回 token、userId、roleId、role | 所有人 |
 | `/api/auth/checkToken` | GET | 校验 Token（`?token=xx` 或请求头 `token: xx`），返回 valid、userId、role | 其他服务内部调用 |
-| `/api/auth/getUserInfo` | GET | 查用户姓名、学号、部门、角色 | 所有人 |
+| `/api/auth/getUserInfo` | GET | 查用户姓名、学号、部门、角色（Header 或 URL 参数带 token，缺失/无效返回 401） | 需登录（联调评审 3-2 起） |
 | `/api/auth/addUser` | POST | 新增用户、分配角色（Header 带 token） | 仅系统管理员 |
 
 **角色编号约定（全组统一）：** 1 学生 / 2 用工部门管理员 / 3 助学中心管理员 / 4 系统管理员
@@ -141,8 +141,8 @@ curl -X POST http://localhost:8081/api/auth/login \
 # 2. 校验 Token（岗位服务/工时服务就是这么调的）
 curl "http://localhost:8081/api/auth/checkToken?token=刚才拿到的token"
 
-# 3. 查用户信息
-curl "http://localhost:8081/api/auth/getUserInfo?userId=4"
+# 3. 查用户信息（联调评审 3-2 起需要带 token）
+curl "http://localhost:8081/api/auth/getUserInfo?userId=4&token=用户登录拿到的token"
 
 # 4. 系统管理员新增一个学生账号
 curl -X POST http://localhost:8081/api/auth/addUser \

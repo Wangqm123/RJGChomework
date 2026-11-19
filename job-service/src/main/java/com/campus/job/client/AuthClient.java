@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -69,11 +73,16 @@ public class AuthClient {
 
     /**
      * 查询用户信息（主要取 deptId）。
+     * 联调评审 3-2：权限服务的 getUserInfo 已加 Token 校验，必须透传用户的原始 Token。
      * 用户不存在等情况统一报 500：属于系统内部数据不一致，不该让前端自行处理。
      */
-    public UserInfo getUserInfo(Long userId) {
-        JsonNode body = get("/api/auth/getUserInfo?userId={userId}", userId);
+    public UserInfo getUserInfo(Long userId, String token) {
+        JsonNode body = getWithToken("/api/auth/getUserInfo?userId={userId}", token, userId);
         int code = body.path("code").asInt();
+        if (code == 401) {
+            // Token 失效与 checkToken 同样处理：让前端引导重新登录
+            throw new BusinessException(401, "未登录或 Token 已失效");
+        }
         if (code != 200) {
             throw new BusinessException(500, "用户信息查询失败（userId=" + userId + "）："
                     + body.path("msg").asText("权限服务返回异常"));
@@ -82,6 +91,27 @@ public class AuthClient {
         JsonNode deptNode = data.path("deptId");
         Long deptId = (deptNode.isMissingNode() || deptNode.isNull()) ? 0L : deptNode.asLong();
         return new UserInfo(data.path("userId").asLong(), deptId, data.path("roleId").asInt());
+    }
+
+    /** 带 token 请求头的 GET 调用（用于已加 Token 校验的权限服务接口） */
+    private JsonNode getWithToken(String pathAndQuery, String token, Object... uriVars) {
+        String url = baseUrl + pathAndQuery;
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            if (token != null && !token.isBlank()) {
+                headers.set("token", token);
+            }
+            ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class, uriVars);
+            JsonNode body = resp.getBody();
+            if (body == null) {
+                throw new BusinessException(500, "权限服务返回内容为空");
+            }
+            return body;
+        } catch (RestClientException e) {
+            log.error("调用权限服务失败：{}", url, e);
+            throw new BusinessException(500, "权限服务暂不可用（未启动或网络不通），请稍后重试");
+        }
     }
 
     /** 统一的 GET 调用与网络异常包装 */
