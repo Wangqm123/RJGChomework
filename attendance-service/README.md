@@ -342,7 +342,7 @@ attendance-service
     │       └── data.sql                             # 造数说明（不预置记录）
     └── test/java/com/campus/attendance
         ├── AttendanceServiceTests.java              # 30 个业务规则用例（TC-01~TC-19、TC-21~TC-23、TC-40~TC-47）
-        ├── AttendanceConcurrencyTests.java          # 1 个并发签到用例（不加事务，需真实提交）
+        ├── AttendanceConcurrencyTests.java          # 2 个并发用例（TC-20 并发签到 / TC-48 并发签退，不加事务，需真实提交）
         └── SettlementServiceTests.java              # 16 个结算/发放用例（TC-24~TC-39）
 ```
 
