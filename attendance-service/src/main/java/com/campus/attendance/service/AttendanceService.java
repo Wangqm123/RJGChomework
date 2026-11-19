@@ -68,7 +68,7 @@ public class AttendanceService {
         Long userId = session.userId();
 
         // 关 1：岗位必须存在（不存在时岗位服务返回 400，这里原样透传提示）
-        JobClient.JobInfo job = jobClient.getJob(jobId);
+        JobClient.JobInfo job = jobClient.getJob(jobId, token);
         // 只允许「已上架(2)」「已招满(4)」两种状态签到：
         // 草稿(0)/待审核(1) 尚未发布、已驳回(3) 审核不过、已下架(5) 主动下架，都不能打卡。
         // 已招满的岗位仍允许「已被录用」的学生签到（录用关系在招满前已建立，招满只影响新投递）。
@@ -88,7 +88,7 @@ public class AttendanceService {
         }
 
         // 关 2：必须被该岗位录用（跨服务校验，本服务不保存录用关系）
-        if (!jobClient.isStudentHired(jobId, userId)) {
+        if (!jobClient.isStudentHired(jobId, userId, token)) {
             throw new BusinessException(400, "您未被该岗位录用，无法签到");
         }
 

@@ -114,7 +114,7 @@ class AttendanceServiceTests {
         // 注意：这里必须用 thenAnswer 一次性给出所有分支，不能写成
         //   when(getJob(anyLong())).thenThrow(...)  再  when(getJob(eq(1L))).thenReturn(...)
         // 因为第二行的 when(...) 参数求值时就会调用 mock，被前一个"抛异常"的桩命中，直接在 setUp 里抛出。
-        when(jobClient.getJob(anyLong())).thenAnswer(inv -> {
+        when(jobClient.getJob(anyLong(), anyString())).thenAnswer(inv -> {
             Long jobId = inv.getArgument(0);
             if (jobId != null && jobId == JOB_ID) {
                 return new JobClient.JobInfo(JOB_ID, "图书馆图书整理助理", SALARY, DEPT_ID, 2);
@@ -137,7 +137,7 @@ class AttendanceServiceTests {
             }
             throw new BusinessException(400, "岗位不存在");
         });
-        when(jobClient.isStudentHired(anyLong(), anyLong())).thenAnswer(inv -> {
+        when(jobClient.isStudentHired(anyLong(), anyLong(), anyString())).thenAnswer(inv -> {
             Long jobId = inv.getArgument(0);
             Long userId = inv.getArgument(1);
             return jobId != null && jobId == JOB_ID && userId != null && userId == 4L;
@@ -218,7 +218,7 @@ class AttendanceServiceTests {
     @Test
     @DisplayName("TC-19 岗位服务不可用：500 友好提示，不放行签到")
     void tc19_jobServiceDown() throws Exception {
-        when(jobClient.isStudentHired(eq(JOB_ID), eq(5L)))
+        when(jobClient.isStudentHired(eq(JOB_ID), eq(5L), anyString()))
                 .thenThrow(new BusinessException(500, "岗位服务暂不可用（未启动或网络不通），请稍后重试"));
 
         mockMvc.perform(post("/api/attendance/checkIn")

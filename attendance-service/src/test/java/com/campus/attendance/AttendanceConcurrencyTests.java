@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
@@ -57,9 +58,9 @@ class AttendanceConcurrencyTests {
     @DisplayName("TC-20 同岗位并发签到：只有一条成功，另一条 400，库中只留 1 条未签退记录")
     void tc20_concurrentCheckIn() throws Exception {
         when(authClient.checkToken("t")).thenReturn(new AuthClient.Session(4L, 1));
-        when(jobClient.getJob(anyLong()))
+        when(jobClient.getJob(anyLong(), anyString()))
                 .thenReturn(new JobClient.JobInfo(1L, "图书馆图书整理助理", new BigDecimal("25.00"), 1L, 2));
-        when(jobClient.isStudentHired(anyLong(), anyLong())).thenReturn(true);
+        when(jobClient.isStudentHired(anyLong(), anyLong(), anyString())).thenReturn(true);
 
         int threads = 2;
         CountDownLatch start = new CountDownLatch(1);

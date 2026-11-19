@@ -45,9 +45,12 @@ public class JobClient {
      * 学生是否被该岗位录用。只在岗位服务的申请状态为「已录用」时返回 true；
      * 没投递、被拒绝、待审核都返回 false。
      */
-    public boolean isStudentHired(Long jobId, Long userId) {
-        JsonNode body = get("/api/job/getStudentHired?jobId={jobId}&userId={userId}", jobId, userId);
+    public boolean isStudentHired(Long jobId, Long userId, String token) {
+        JsonNode body = getWithToken("/api/job/getStudentHired?jobId={jobId}&userId={userId}", token, jobId, userId);
         int code = body.path("code").asInt();
+        if (code == 401) {
+            throw new BusinessException(401, "未登录或 Token 已失效");
+        }
         if (code != 200) {
             throw new BusinessException(500, "录用资格查询失败：" + body.path("msg").asText("岗位服务返回异常"));
         }
@@ -58,9 +61,12 @@ public class JobClient {
      * 查询岗位详情（任意状态可查）。
      * 岗位不存在时岗位服务返回 400，这里原样透传提示，方便前端定位。
      */
-    public JobInfo getJob(Long jobId) {
-        JsonNode body = get("/api/job/getJob?jobId={jobId}", jobId);
+    public JobInfo getJob(Long jobId, String token) {
+        JsonNode body = getWithToken("/api/job/getJob?jobId={jobId}", token, jobId);
         int code = body.path("code").asInt();
+        if (code == 401) {
+            throw new BusinessException(401, "未登录或 Token 已失效");
+        }
         if (code == 400) {
             throw new BusinessException(400, body.path("msg").asText("岗位不存在"));
         }
@@ -89,6 +95,34 @@ public class JobClient {
         String url = baseUrl + pathAndQuery;
         try {
             JsonNode body = restTemplate.getForObject(url, JsonNode.class, uriVars);
+            if (body == null) {
+                throw new BusinessException(500, "岗位服务返回内容为空");
+            }
+            return body;
+        } catch (RestClientException e) {
+            log.error("调用岗位服务失败：{}", url, e);
+            throw new BusinessException(500, "岗位服务暂不可用（未启动或网络不通），请稍后重试");
+        }
+    }
+
+    /**
+     * 带 token 请求头的 GET 调用。
+     * 联调评审 4-2：岗位服务的 getJob / getStudentHired 已改为必须登录，匿名返回 401，
+     * 本服务必须透传用户原始 Token，否则签到链路的"录用资格 / 岗位详情"查询会被 401 拒绝。
+     * 401 与权限服务 checkToken 同样处理，让前端引导重新登录。
+     */
+    private JsonNode getWithToken(String pathAndQuery, String token, Object... uriVars) {
+        String url = baseUrl + pathAndQuery;
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            if (token != null && !token.isBlank()) {
+                headers.set("token", token);
+            }
+            org.springframework.http.HttpEntity<Void> entity =
+                    new org.springframework.http.HttpEntity<>(headers);
+            org.springframework.http.ResponseEntity<JsonNode> resp =
+                    restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, entity, JsonNode.class, uriVars);
+            JsonNode body = resp.getBody();
             if (body == null) {
                 throw new BusinessException(500, "岗位服务返回内容为空");
             }
