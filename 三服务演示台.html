@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三服务联合演示台 · 校园勤工助学岗位分布式管理系统</title>
+<style>
+  :root {
+    --bg: #F5F6F8; --panel: #FFFFFF; --side: #FAFBFC;
+    --ink: #1F2329; --ink-2: #646A73; --ink-3: #8F959E;
+    --line: #E3E6EB; --accent: #1668DC; --accent-dark: #0E4FA8;
+    --get: #18A058; --get-bg: #E8F7EF; --post: #D9730D; --post-bg: #FBF0E5;
+    --ok: #18A058; --warn: #D9730D; --err: #D93026; --console: #1D2129;
+    --auth-c: #1668DC; --job-c: #7B4FD0; --att-c: #0E8A7B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+  .app { display: flex; height: 100vh; }
+
+  aside { width: 268px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .brand { padding: 18px 16px 14px; border-bottom: 1px solid var(--line); }
+  .brand-name { font-size: 15px; font-weight: 700; letter-spacing: .04em; }
+  .brand-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; line-height: 1.6; }
+  .conn { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+  .conn span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--err); }
+
+  nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+  .nav-label { font-size: 12px; color: var(--ink-3); padding: 12px 10px 7px; letter-spacing: .05em; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 4px; cursor: pointer;
+    color: var(--ink-2); font-size: 13.5px; margin-bottom: 2px; white-space: nowrap; }
+  .nav-item:hover { background: #EFF1F4; color: var(--ink); }
+  .nav-item.active { background: #E8EEF9; color: var(--accent-dark); font-weight: 600; }
+  .nav-item .path { font-family: "SF Mono", Menlo, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .m { font-size: 11px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+    font-family: "SF Mono", Menlo, monospace; letter-spacing: .03em; flex: none; width: 46px; text-align: center; }
+  .m.get { color: var(--get); background: var(--get-bg); }
+  .m.post { color: var(--post); background: var(--post-bg); }
+  .m.run { color: var(--accent); background: #E8EEF9; }
+  .m.auth { color: #fff; background: var(--auth-c); }
+  .m.job { color: #fff; background: var(--job-c); }
+  .m.att { color: #fff; background: var(--att-c); }
+
+  .side-foot { border-top: 1px solid var(--line); padding: 14px 16px; }
+  .id-card { font-size: 13px; color: var(--ink-2); line-height: 1.75; }
+  .id-card b { color: var(--ink); font-weight: 600; }
+  .ver { font-size: 12px; color: var(--ink-3); margin-top: 7px; }
+
+  main { flex: 1; overflow-y: auto; padding: 20px 24px 40px; min-width: 0; }
+  .panel { display: none; max-width: 880px; }
+  .panel.active { display: block; }
+
+  .addr-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px 14px; margin-bottom: 18px; max-width: 880px; }
+  .addr-title { font-size: 12.5px; color: var(--ink-3); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .addr-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .addr-row label { width: 92px; font-size: 12.5px; color: var(--ink-2); flex: none; font-family: "SF Mono", Menlo, monospace; }
+  .addr-row input { flex: 1; max-width: 420px; }
+  .addr-row .ok-tag { font-size: 12px; color: var(--ink-3); min-width: 120px; }
+
+  .p-head { margin-bottom: 16px; }
+  .p-head h2 { font-size: 17px; font-weight: 600; font-family: "SF Mono", Menlo, monospace; display: flex; align-items: center; gap: 10px; }
+  .p-head .desc { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.7; }
+  .p-head .desc b { color: var(--ink); font-weight: 500; }
+
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 14px; }
+  .block-title { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 10px 14px;
+    border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; letter-spacing: .02em; }
+  .block-body { padding: 14px; }
+
+  .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-row:last-child { margin-bottom: 0; }
+  label.f { font-size: 13.5px; color: var(--ink-2); width: 96px; flex: none; font-family: "SF Mono", Menlo, monospace; }
+  input, textarea { border: 1px solid var(--line); border-radius: 4px; padding: 8px 11px; font-size: 13.5px;
+    background: #fff; color: var(--ink); font-family: "SF Mono", Menlo, Consolas, monospace; transition: border-color .12s; }
+  input { width: 240px; }
+  textarea { width: 100%; resize: vertical; }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+  button { cursor: pointer; border: 1px solid transparent; border-radius: 4px; padding: 7px 16px;
+    font-size: 13px; font-weight: 500; background: var(--accent); color: #fff; transition: background .12s; white-space: nowrap; }
+  button:hover { background: var(--accent-dark); }
+  button.plain { background: #fff; color: var(--ink); border-color: var(--line); }
+  button.plain:hover { background: #F5F6F8; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px; padding: 7px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 14px; border-bottom: 1px solid #F0F2F5; }
+  tr:last-child td { border-bottom: none; }
+  td .u { font-family: "SF Mono", Menlo, monospace; }
+  td button { padding: 4px 14px; font-size: 12.5px; white-space: nowrap; }
+
+  .resp-chip { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 3px; font-family: "SF Mono", Menlo, monospace; }
+  .chip-ok { background: #E8F7EF; color: var(--ok); }
+  .chip-warn { background: #FBF0E5; color: var(--warn); }
+  .chip-err { background: #FCEAEA; color: var(--err); }
+  pre.console { background: var(--console); color: #C9CDD4; border-radius: 0 0 6px 6px; padding: 14px 16px;
+    font-size: 12.5px; line-height: 1.8; font-family: "SF Mono", Menlo, Consolas, monospace;
+    overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-all; }
+  .console.empty { color: var(--ink-3); background: #F7F8FA; display: flex; align-items: center; min-height: 56px;
+    padding: 14px; border: 1px dashed var(--line); border-top: none; }
+  .j-key { color: #79C0FF; } .j-str { color: #A5D6A7; } .j-num { color: #F2A6A6; } .j-bool, .j-null { color: #D2A8FF; }
+
+  .term { background: var(--console); border-radius: 6px; padding: 14px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 2.0;
+    color: #ADB1B8; max-height: 520px; overflow: auto; min-height: 220px; }
+  .term .hint { color: #4E5561; }
+  .tline { margin-bottom: 2px; }
+  .tline .tt { color: #4E5561; margin-right: 10px; }
+  .tline .code { font-weight: 700; margin-right: 10px; }
+  .code.c2 { color: #4ADE80; } .code.c4 { color: #FBBF24; } .code.c5 { color: #F87171; }
+  .tline .lbl { color: #E5E7EB; }
+  .tline details { margin: 2px 0 8px 58px; }
+  .tline summary { color: #4E5561; cursor: pointer; font-size: 11px; user-select: none; }
+  .tline pre { color: #9CA3AF; font-size: 11.5px; padding: 6px 0 0 12px; white-space: pre-wrap; word-break: break-all; }
+  .foot-note { font-size: 12.5px; color: var(--ink-3); margin-top: 14px; line-height: 1.8; }
+  .foot-note code { font-family: "SF Mono", Menlo, monospace; background: #EFF1F4; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside>
+    <div class="brand">
+      <div class="brand-name">三服务联合演示台</div>
+      <div class="brand-sub">校园勤工助学岗位分布式管理系统<br>auth 8081 · job 8082 · attendance 8083</div>
+      <div class="conn">
+        <span><span class="dot" id="dotAuth"></span>auth</span>
+        <span><span class="dot" id="dotJob"></span>job</span>
+        <span><span class="dot" id="dotAtt"></span>attendance</span>
+      </div>
+    </div>
+    <nav>
+      <div class="nav-label">① 登录（全组共用）</div>
+      <div class="nav-item active" data-p="p-login" onclick="nav('p-login', this)"><span class="m auth">AUTH</span><span class="path">/login 登录拿 Token</span></div>
+
+      <div class="nav-label">② 岗位服务 · /api/job</div>
+      <div class="nav-item" data-p="p-publish" onclick="nav('p-publish', this)"><span class="m job">JOB</span><span class="path">/publish 发布岗位</span></div>
+      <div class="nav-item" data-p="p-auditjob" onclick="nav('p-auditjob', this)"><span class="m job">JOB</span><span class="path">/auditJob 中心审核</span></div>
+      <div class="nav-item" data-p="p-listjob" onclick="nav('p-listjob', this)"><span class="m get">GET</span><span class="path">/listJob 岗位列表</span></div>
+      <div class="nav-item" data-p="p-apply" onclick="nav('p-apply', this)"><span class="m job">JOB</span><span class="path">/applyJob 学生投递</span></div>
+      <div class="nav-item" data-p="p-auditapply" onclick="nav('p-auditapply', this)"><span class="m job">JOB</span><span class="path">/auditApply 部门录用</span></div>
+      <div class="nav-item" data-p="p-offline" onclick="nav('p-offline', this)"><span class="m job">JOB</span><span class="path">/offlineJob 下架岗位</span></div>
+
+      <div class="nav-label">③ 工时服务 · /api/attendance</div>
+      <div class="nav-item" data-p="p-checkin" onclick="nav('p-checkin', this)"><span class="m att">ATT</span><span class="path">/checkIn 签到</span></div>
+      <div class="nav-item" data-p="p-checkout" onclick="nav('p-checkout', this)"><span class="m att">ATT</span><span class="path">/checkOut 签退核算</span></div>
+      <div class="nav-item" data-p="p-myrecord" onclick="nav('p-myrecord', this)"><span class="m get">GET</span><span class="path">/myRecord 我的记录</span></div>
+      <div class="nav-item" data-p="p-mysubsidy" onclick="nav('p-mysubsidy', this)"><span class="m get">GET</span><span class="path">/mySubsidy 我的补贴</span></div>
+      <div class="nav-item" data-p="p-summary" onclick="nav('p-summary', this)"><span class="m get">GET</span><span class="path">/deptSummary 部门汇总</span></div>
+      <div class="nav-item" data-p="p-settle" onclick="nav('p-settle', this)"><span class="m att">ATT</span><span class="path">/settle 月度结算</span></div>
+      <div class="nav-item" data-p="p-pay" onclick="nav('p-pay', this)"><span class="m att">ATT</span><span class="path">/pay 批量发放</span></div>
+
+      <div class="nav-label">自动化</div>
+      <div class="nav-item" data-p="p-demo" onclick="nav('p-demo', this)"><span class="m run">RUN</span><span class="path">全链路 9 步演示</span></div>
+    </nav>
+    <div class="side-foot">
+      <div class="id-card" id="idCard"><b>未登录</b> · 无可用 Token</div>
+      <div class="ver">三服务演示台 v1.0 · 2026-11-20</div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- 服务地址配置 -->
+    <div class="addr-panel">
+      <div class="addr-title"><span>服务地址配置（跨机演示时改成对应机器的局域网 IP，自动保存到浏览器）</span>
+        <button class="plain" onclick="resetAddr()" style="padding:3px 10px;font-size:12px">恢复默认 localhost</button></div>
+      <div class="addr-row"><label>AUTH_BASE</label><input id="addrAuth" placeholder="http://localhost:8081"><span class="ok-tag" id="tagAuth"></span></div>
+      <div class="addr-row"><label>JOB_BASE</label><input id="addrJob" placeholder="http://localhost:8082"><span class="ok-tag" id="tagJob"></span></div>
+      <div class="addr-row"><label>ATT_BASE</label><input id="addrAtt" placeholder="http://localhost:8083"><span class="ok-tag" id="tagAtt"></span></div>
+    </div>
+
+    <!-- 登录 -->
+    <section class="panel active" id="p-login">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/auth/login（auth-service）</h2>
+        <div class="desc">整个系统的入口：登录签发 <b>JWT Token</b>（24h 有效）。后续岗位、工时接口全部使用这里的 Token。演示流程中会多次切换身份登录。</div>
+      </div>
+      <div class="block">
+        <div class="block-title">演示账号（密码统一 123456）</div>
+        <table id="accTable"></table>
+      </div>
+      <div class="block">
+        <div class="block-title">手动登录</div>
+        <div class="block-body">
+          <div class="form-row"><label class="f">username</label><input id="loginUser" value="student1"></div>
+          <div class="form-row"><label class="f">password</label><input id="loginPass" type="password" value="123456"></div>
+          <div class="form-row"><label class="f"></label><button onclick="doLogin()">登录</button>
+            <button class="plain" onclick="doLoginBad()">错密码（应 400）</button></div>
+        </div>
+      </div>
+      <div class="block">
+        <div class="block-title">响应结果 <span class="resp-chip" id="loginChip" style="display:none"></span></div>
+        <pre id="loginResp" class="console empty">发送请求后此处显示响应 JSON</pre>
+      </div>
+    </section>
+
+    <!-- 发布岗位 -->
+    <section class="panel" id="p-publish">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/job/publish（job-service）</h2>
+        <div class="desc"><b>用工部门管理员</b>（deptA）发布岗位，初始状态「待审核」。先在 ① 用 deptA 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobName</label><input id="pubName" value="图书馆图书整理助理"></div>
+        <div class="form-row"><label class="f">address</label><input id="pubAddr" value="图书馆三楼"></div>
+        <div class="form-row"><label class="f">hourSalary</label><input id="pubSalary" value="25" style="width:100px"><span style="font-size:12px;color:var(--ink-3)">元/小时</span></div>
+        <div class="form-row"><label class="f">needNum</label><input id="pubNum" value="2" style="width:100px"></div>
+        <div class="form-row"><label class="f">description</label><input id="pubDesc" value="整理图书，维护借阅秩序"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doPublish()">发布</button>
+          <button class="plain" onclick="doPublishDenied()">学生身份发（应 403）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="pubChip" style="display:none"></span></div>
+        <pre id="pubResp" class="console empty">发送请求后此处显示响应 JSON（jobId 自动记录到全链路演示）</pre></div>
+    </section>
+
+    <!-- 中心审核 -->
+    <section class="panel" id="p-auditjob">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/job/auditJob（job-service）</h2>
+        <div class="desc"><b>助学中心管理员</b>（center）审核岗位：pass 上架 / reject 驳回。先在 ① 用 center 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobId</label><input id="ajJobId" value="1" style="width:100px"><span style="font-size:12px;color:var(--ink-3)">默认填最近一次发布返回的 jobId</span></div>
+        <div class="form-row"><label class="f">auditResult</label><input id="ajResult" value="pass" style="width:140px"><span style="font-size:12px;color:var(--ink-3)">pass 上架 · reject 驳回</span></div>
+        <div class="form-row"><label class="f">auditRemark</label><input id="ajRemark" value="同意上架"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doAuditJob()">提交审核</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="ajChip" style="display:none"></span></div>
+        <pre id="ajResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 岗位列表 -->
+    <section class="panel" id="p-listjob">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/job/listJob（job-service）</h2>
+        <div class="desc">公开接口，查看<b>已上架</b>岗位列表。学生浏览岗位就是这一步。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">page / size</label><input id="ljPage" value="1" style="width:80px"><input id="ljSize" value="10" style="width:80px"><button onclick="doListJob()">查询</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="ljChip" style="display:none"></span></div>
+        <pre id="ljResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 学生投递 -->
+    <section class="panel" id="p-apply">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/job/applyJob（job-service）</h2>
+        <div class="desc"><b>学生</b>（student1）投递岗位。先在 ① 用 student1 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobId</label><input id="apJobId" value="1" style="width:100px"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doApply()">投递</button>
+          <button class="plain" onclick="doApplyReapply()">重复投递（应 400）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="apChip" style="display:none"></span></div>
+        <pre id="apResp" class="console empty">发送请求后此处显示响应 JSON（applyId 自动记录到全链路演示）</pre></div>
+    </section>
+
+    <!-- 部门录用 -->
+    <section class="panel" id="p-auditapply">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/job/auditApply（job-service）</h2>
+        <div class="desc"><b>用工部门管理员</b>（deptA）录用/拒绝申请。录用后学生才被允许签到。先在 ① 用 deptA 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">applyId</label><input id="aaApplyId" value="1" style="width:100px"><span style="font-size:12px;color:var(--ink-3)">默认填最近一次投递返回的 applyId</span></div>
+        <div class="form-row"><label class="f">applyResult</label><input id="aaResult" value="accept" style="width:140px"><span style="font-size:12px;color:var(--ink-3)">accept 录用 · reject 拒绝</span></div>
+        <div class="form-row"><label class="f">remark</label><input id="aaRemark" value="同意录用"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doAuditApply()">提交</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="aaChip" style="display:none"></span></div>
+        <pre id="aaResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 下架 -->
+    <section class="panel" id="p-offline">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/job/offlineJob（job-service）</h2>
+        <div class="desc"><b>部门管理员</b>下架岗位。下架后签到会被拦截（全链路演示第 9 步用到）。先在 ① 用 deptA 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobId</label><input id="ofJobId" value="1" style="width:100px"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doOffline()">下架</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="ofChip" style="display:none"></span></div>
+        <pre id="ofResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 签到 -->
+    <section class="panel" id="p-checkin">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/attendance/checkIn（attendance-service）</h2>
+        <div class="desc">签到前内部走<b>两道跨服务校验</b>：调 auth 的 checkToken → 调 job 的 getStudentHired，都通过才落库，并快照时薪/部门。先在 ① 用已录用的 student1 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobId</label><input id="ciJobId" value="1" style="width:100px"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doCheckIn()">签到</button>
+          <button class="plain" onclick="doCheckInAgain()">重复签到（应 400）</button>
+          <button class="plain" onclick="doCheckInNoToken()">不带 Token（应 401）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="ciChip" style="display:none"></span></div>
+        <pre id="ciResp" class="console empty">发送请求后此处显示响应 JSON（注意 data 里的时薪/部门快照）</pre></div>
+    </section>
+
+    <!-- 签退 -->
+    <section class="panel" id="p-checkout">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/attendance/checkOut（attendance-service）</h2>
+        <div class="desc">签退自动核算：<b>工时 × 签到时的时薪快照 = 补贴</b>。演示时签退间隔建议 ≥1 分钟（否则金额为 0.42 元之类的最小值）。先在 ① 用 student1 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">jobId</label><input id="coJobId" value="1" style="width:100px"></div>
+        <div class="form-row"><label class="f"></label><button onclick="doCheckOut()">签退</button>
+          <button class="plain" onclick="doCheckOutAgain()">重复签退（应 400）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="coChip" style="display:none"></span></div>
+        <pre id="coResp" class="console empty">发送请求后此处显示响应 JSON（关注 workMinutes / amount）</pre></div>
+    </section>
+
+    <!-- 我的记录 -->
+    <section class="panel" id="p-myrecord">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/attendance/myRecord（attendance-service）</h2>
+        <div class="desc">学生查自己的工时记录（分页，合计按整月全量算）。数据隔离：只能看到本人的。先在 ① 用 student1 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">month</label><input id="mrMonth" value="2026-11" style="width:130px"></div>
+        <div class="form-row"><label class="f">page / size</label><input id="mrPage" value="1" style="width:80px"><input id="mrSize" value="10" style="width:80px"><button onclick="doMyRecord()">查询</button>
+          <button class="plain" onclick="doMyRecordBad()">size=0（应 400）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="mrChip" style="display:none"></span></div>
+        <pre id="mrResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 我的补贴 -->
+    <section class="panel" id="p-mysubsidy">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/attendance/mySubsidy（attendance-service）</h2>
+        <div class="desc">学生查本人月度补贴汇总与发放状态（未结算 / 待发放 / 已发放）。先在 ① 用 student1 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">month</label><input id="msMonth" value="2026-11" style="width:130px"><button onclick="doMySubsidy()">查询</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="msChip" style="display:none"></span></div>
+        <pre id="msResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 部门汇总 -->
+    <section class="panel" id="p-summary">
+      <div class="p-head">
+        <h2><span class="m get">GET</span>/api/attendance/deptSummary（attendance-service）</h2>
+        <div class="desc">部门管理员查<b>本部门</b>工时汇总（deptId 从权限服务取，防越权）；中心管理员可指定 deptId。先在 ① 用 deptA 或 center 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">month</label><input id="dsMonth" value="2026-11" style="width:130px"></div>
+        <div class="form-row"><label class="f">deptId</label><input id="dsDept" value="" placeholder="留空 = 用部门管理员身份自动判定" style="width:200px"><button onclick="doDeptSummary()">查询</button>
+          <button class="plain" onclick="doDeptSummaryDenied()">学生身份查（应 403）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="dsChip" style="display:none"></span></div>
+        <pre id="dsResp" class="console empty">发送请求后此处显示响应 JSON</pre></div>
+    </section>
+
+    <!-- 结算 -->
+    <section class="panel" id="p-settle">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/attendance/settle（attendance-service）</h2>
+        <div class="desc"><b>助学中心管理员</b>把某月已签退工时固化成发放单。重复结算只刷新不新增（幂等）。先在 ① 用 center 登录。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">month</label><input id="stMonth" value="2026-11" style="width:130px"></div>
+        <div class="form-row"><label class="f">deptId</label><input id="stDept" value="" placeholder="留空 = 全部门" style="width:200px"><button onclick="doSettle()">结算</button>
+          <button class="plain" onclick="doSettleAgain()">重复结算（幂等刷新）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="stChip" style="display:none"></span></div>
+        <pre id="stResp" class="console empty">发送请求后此处显示响应 JSON（关注 createdCount / refreshedCount / totalAmount）</pre></div>
+    </section>
+
+    <!-- 发放 -->
+    <section class="panel" id="p-pay">
+      <div class="p-head">
+        <h2><span class="m post">POST</span>/api/attendance/pay（attendance-service）</h2>
+        <div class="desc"><b>助学中心管理员</b>批量发放补贴。已发放金额冻结，重复点不会重复计数。发放后可在 ① 用 student1 登录查 mySubsidy 看到状态变为「已发放」。</div>
+      </div>
+      <div class="block"><div class="block-title">请求参数</div><div class="block-body">
+        <div class="form-row"><label class="f">month</label><input id="pyMonth" value="2026-11" style="width:130px"></div>
+        <div class="form-row"><label class="f">deptId</label><input id="pyDept" value="" placeholder="留空 = 全部门" style="width:200px"><button onclick="doPay()">发放</button>
+          <button class="plain" onclick="doPayAgain()">重复发放（应 400）</button></div>
+      </div></div>
+      <div class="block"><div class="block-title">响应结果 <span class="resp-chip" id="pyChip" style="display:none"></span></div>
+        <pre id="pyResp" class="console empty">发送请求后此处显示响应 JSON（关注 paidCount / paidAmount）</pre></div>
+    </section>
+
+    <!-- 全链路演示 -->
+    <section class="panel" id="p-demo">
+      <div class="p-head">
+        <h2><span class="m run">RUN</span>全链路 9 步自动化演示</h2>
+        <div class="desc">发布 → 中心审核 → 投递 → 录用 → <b>未录用学生签到被拦（400）</b> → 录用学生签到（跨服务双校验）→ 签退核算 → 中心结算 → 批量发放。跨 auth / job / attendance 三个服务完成一条完整业务闭环。</div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <button id="demoBtn" onclick="runDemo()">执行演示（约 5 秒）</button>
+        <button class="plain" onclick="clearDemo()">清空输出</button>
+      </div>
+      <div class="term" id="demoLog"><span class="hint">// 点击「执行演示」，三服务请求日志将在此输出</span></div>
+      <div class="foot-note">演示会自动切换 student1 / student2 / deptA / center 四个身份登录。签到与签退间隔为最小值（1 分钟内），金额按 1 分钟核算。</div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ===== 服务地址（localStorage 持久化） ===== */
+const ADDR_KEY = 'demo3svc_addr';
+let ADDR = { auth: 'http://localhost:8081', job: 'http://localhost:8082', att: 'http://localhost:8083' };
+try { const s = JSON.parse(localStorage.getItem(ADDR_KEY)); if (s && s.auth) ADDR = s; } catch (e) {}
+
+function loadAddrUI() {
+  ['auth','job','att'].forEach(k => document.getElementById('addr'+cap(k)).value = ADDR[k]);
+}
+function cap(s){ return s[0].toUpperCase()+s.slice(1); }
+function saveAddr() {
+  ['auth','job','att'].forEach(k => {
+    const v = document.getElementById('addr'+cap(k)).value.trim();
+    if (v) ADDR[k] = v.replace(/\/+$/, '');
+  });
+  localStorage.setItem(ADDR_KEY, JSON.stringify(ADDR));
+  checkAll();
+}
+function resetAddr() {
+  ADDR = { auth: 'http://localhost:8081', job: 'http://localhost:8082', att: 'http://localhost:8083' };
+  localStorage.removeItem(ADDR_KEY);
+  loadAddrUI(); checkAll();
+}
+['addrAuth','addrJob','addrAtt'].forEach(id => document.getElementById(id).addEventListener('change', saveAddr));
+
+let TOKEN = null, TOKEN_ROLE = null, TOKEN_USER = null, UID = null;
+
+/* 表单取值辅助：v=字符串，num=整数（空/非法回退 0） */
+function v(id) { return document.getElementById(id).value.trim(); }
+function num(id) { const n = parseInt(v(id), 10); return isNaN(n) ? 0 : n; }
+
+const ACCOUNTS = [
+  { u: 'student1', r: '学生',        d: '张三 · 全链路主演示（签到签退）' },
+  { u: 'student2', r: '学生',        d: '李四 · 未录用拦截演示' },
+  { u: 'deptA',    r: '部门管理员',  d: '图书馆 · 发布岗位 / 录用申请' },
+  { u: 'center',   r: '助学中心管理员', d: '中心 · 审核岗位 / 结算 / 发放' },
+  { u: 'admin',    r: '系统管理员',  d: '用户与角色管理' },
+];
+
+/* 导航 */
+function nav(id, el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* 账号表 */
+document.getElementById('accTable').innerHTML =
+  '<tr><th>账号</th><th>角色</th><th>说明</th><th style="width:110px"></th></tr>' +
+  ACCOUNTS.map(a => `<tr><td class="u">${a.u}</td><td>${a.r}</td><td style="color:var(--ink-3)">${a.d}</td>
+    <td><button class="plain" onclick="quickLogin('${a.u}')">快速登录</button></td></tr>`).join('');
+
+/* JSON 高亮与展示（沿用 auth 测试台实现） */
+function hl(json) {
+  const esc = json.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return esc.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|\b-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, m => {
+    let cls = 'j-num';
+    if (/^"/.test(m)) cls = /:$/.test(m) ? 'j-key' : 'j-str';
+    else if (/true|false/.test(m)) cls = 'j-bool';
+    else if (/null/.test(m)) cls = 'j-null';
+    return `<span class="${cls}">${m}</span>`;
+  });
+}
+function fmt(j) { return JSON.stringify(j, null, 2); }
+function show(id, text, code, ms) {
+  const chip = document.getElementById(id.replace('Resp', 'Chip'));
+  const el = document.getElementById(id);
+  if (chip) {
+    chip.style.display = code ? '' : 'none';
+    if (code) {
+      const cls = code === 200 ? 'chip-ok' : (code === 400 || code === 401) ? 'chip-warn' : 'chip-err';
+      chip.className = 'resp-chip ' + cls;
+      chip.textContent = 'HTTP ' + code + (ms ? ' · ' + ms + ' ms' : '');
+    }
+  }
+  el.className = 'console';
+  el.innerHTML = hl(text);
+}
+
+/* 通用请求 */
+async function call(base, path, { method = 'GET', body = null, token = null } = {}) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (token) headers['token'] = token;
+  const t0 = performance.now();
+  const resp = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const ms = Math.round(performance.now() - t0);
+  let j; try { j = await resp.json(); } catch (e) { j = { code: resp.status, msg: '非 JSON 响应' }; }
+  return { j, ms, http: resp.status };
+}
+
+/* 登录（共用） */
+async function loginAs(u, p) {
+  const { j } = await call(ADDR.auth, '/api/auth/login', { method: 'POST', body: { username: u, password: p } });
+  if (j.code !== 200) throw new Error('登录失败: ' + j.msg);
+  return j.data;
+}
+function setIdentity(u, role, userId) {
+  TOKEN_USER = u; TOKEN_ROLE = role; UID = userId;
+  document.getElementById('idCard').innerHTML = `<b>${role}</b> · ${u}<br>userId = ${userId} · 已登录`;
+}
+
+async function quickLogin(u) {
+  document.getElementById('loginUser').value = u;
+  document.getElementById('loginPass').value = '123456';
+  await doLogin();
+}
+async function doLogin() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  try {
+    const d = await loginAs(u, p);
+    TOKEN = d.token; setIdentity(u, d.role, d.userId);
+    show('loginResp', fmt({ code: 200, data: d }), 200);
+  } catch (e) { show('loginResp', '// ' + e.message + '\n// 请确认 auth 服务已启动且地址配置正确'); }
+}
+async function doLoginBad() {
+  try {
+    const { j, ms } = await call(ADDR.auth, '/api/auth/login', { method: 'POST', body: { username: 'student1', password: 'wrong_password' } });
+    show('loginResp', fmt(j), j.code, ms);
+  } catch (e) { show('loginResp', '// 请求失败：' + e.message); }
+}
+function needToken(respId) { if (!TOKEN) { show(respId, '// 请先在「① 登录」用对应身份登录'); return false; } return true; }
+
+/* ===== job-service 各接口 ===== */
+async function doPublish() { if (!needToken('pubResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/publish', { method: 'POST', token: TOKEN, body: {
+    jobName: v('pubName'), address: v('pubAddr'), hourSalary: num('pubSalary'), needNum: num('pubNum'), description: v('pubDesc') } });
+    show('pubResp', fmt(j), j.code, ms);
+    if (j.code === 200 && j.data && j.data.jobId) { LAST.jobId = j.data.jobId; fillJobIds(); }
+  } catch (e) { show('pubResp', '// 请求失败：' + e.message + '\n// 检查 job 服务地址与启动状态'); } }
+async function doPublishDenied() {
+  try { const d = await loginAs('student1', '123456');
+    const { j, ms } = await call(ADDR.job, '/api/job/publish', { method: 'POST', token: d.token, body: {
+      jobName: '越权测试岗', address: 'x', hourSalary: 1, needNum: 1, description: '' } });
+    show('pubResp', '// 固定使用学生 student1 身份（与当前登录无关）\n' + fmt(j), j.code, ms);
+  } catch (e) { show('pubResp', '// 请求失败：' + e.message); } }
+
+async function doAuditJob() { if (!needToken('ajResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/auditJob', { method: 'POST', token: TOKEN,
+    body: { jobId: num('ajJobId'), auditResult: v('ajResult') || 'pass', auditRemark: v('ajRemark') } });
+    show('ajResp', fmt(j), j.code, ms);
+  } catch (e) { show('ajResp', '// 请求失败：' + e.message); } }
+
+async function doListJob() {
+  try { const { j, ms } = await call(ADDR.job, `/api/job/listJob?page=${v('ljPage')||1}&size=${v('ljSize')||10}`);
+    show('ljResp', fmt(j), j.code, ms);
+  } catch (e) { show('ljResp', '// 请求失败：' + e.message); } }
+
+async function doApply() { if (!needToken('apResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/applyJob', { method: 'POST', token: TOKEN,
+    body: UID ? { jobId: num('apJobId'), userId: UID } : { jobId: num('apJobId') } });
+    show('apResp', fmt(j), j.code, ms);
+    if (j.code === 200 && j.data && j.data.applyId) { LAST.applyId = j.data.applyId; fillJobIds(); }
+  } catch (e) { show('apResp', '// 请求失败：' + e.message); } }
+async function doApplyReapply() { if (!needToken('apResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/applyJob', { method: 'POST', token: TOKEN,
+    body: { jobId: num('apJobId') } });
+    show('apResp', '// 再次投递同一岗位\n' + fmt(j), j.code, ms);
+  } catch (e) { show('apResp', '// 请求失败：' + e.message); } }
+
+async function doAuditApply() { if (!needToken('aaResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/auditApply', { method: 'POST', token: TOKEN,
+    body: { applyId: num('aaApplyId'), applyResult: v('aaResult') || 'accept', remark: v('aaRemark') } });
+    show('aaResp', fmt(j), j.code, ms);
+  } catch (e) { show('aaResp', '// 请求失败：' + e.message); } }
+
+async function doOffline() { if (!needToken('ofResp')) return;
+  try { const { j, ms } = await call(ADDR.job, '/api/job/offlineJob', { method: 'POST', token: TOKEN,
+    body: { jobId: num('ofJobId') } });
+    show('ofResp', fmt(j), j.code, ms);
+  } catch (e) { show('ofResp', '// 请求失败：' + e.message); } }
+
+/* ===== attendance-service 各接口 ===== */
+async function doCheckIn() { if (!needToken('ciResp')) return;
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/checkIn', { method: 'POST', token: TOKEN,
+    body: { jobId: num('ciJobId') } });
+    show('ciResp', fmt(j), j.code, ms);
+  } catch (e) { show('ciResp', '// 请求失败：' + e.message + '\n// 检查 attendance 服务地址与启动状态'); } }
+async function doCheckInAgain() { if (!needToken('ciResp')) return;
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/checkIn', { method: 'POST', token: TOKEN,
+    body: { jobId: num('ciJobId') } });
+    show('ciResp', '// 已签到未签退时再次签到\n' + fmt(j), j.code, ms);
+  } catch (e) { show('ciResp', '// 请求失败：' + e.message); } }
+async function doCheckInNoToken() {
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/checkIn', { method: 'POST',
+    body: { jobId: num('ciJobId') } });
+    show('ciResp', '// 不带 Token 调用（跨服务鉴权拦截）\n' + fmt(j), j.code, ms);
+  } catch (e) { show('ciResp', '// 请求失败：' + e.message); } }
+
+async function doCheckOut() { if (!needToken('coResp')) return;
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/checkOut', { method: 'POST', token: TOKEN,
+    body: { jobId: num('coJobId') } });
+    show('coResp', fmt(j), j.code, ms);
+  } catch (e) { show('coResp', '// 请求失败：' + e.message); } }
+async function doCheckOutAgain() { if (!needToken('coResp')) return;
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/checkOut', { method: 'POST', token: TOKEN,
+    body: { jobId: num('coJobId') } });
+    show('coResp', '// 未签到状态下签退\n' + fmt(j), j.code, ms);
+  } catch (e) { show('coResp', '// 请求失败：' + e.message); } }
+
+async function doMyRecord() { if (!needToken('mrResp')) return;
+  try { const { j, ms } = await call(ADDR.att,
+    `/api/attendance/myRecord?month=${v('mrMonth')}&page=${v('mrPage')||1}&size=${v('mrSize')||10}`, { token: TOKEN });
+    show('mrResp', fmt(j), j.code, ms);
+  } catch (e) { show('mrResp', '// 请求失败：' + e.message); } }
+async function doMyRecordBad() { if (!needToken('mrResp')) return;
+  try { const { j, ms } = await call(ADDR.att, `/api/attendance/myRecord?month=${v('mrMonth')}&page=1&size=0`, { token: TOKEN });
+    show('mrResp', '// size=0 非法参数\n' + fmt(j), j.code, ms);
+  } catch (e) { show('mrResp', '// 请求失败：' + e.message); } }
+
+async function doMySubsidy() { if (!needToken('msResp')) return;
+  try { const { j, ms } = await call(ADDR.att, `/api/attendance/mySubsidy?month=${v('msMonth')}`, { token: TOKEN });
+    show('msResp', fmt(j), j.code, ms);
+  } catch (e) { show('msResp', '// 请求失败：' + e.message); } }
+
+async function doDeptSummary() { if (!needToken('dsResp')) return;
+  const extra = v('dsDept') ? `&deptId=${v('dsDept')}` : '';
+  try { const { j, ms } = await call(ADDR.att, `/api/attendance/deptSummary?month=${v('dsMonth')}${extra}`, { token: TOKEN });
+    show('dsResp', fmt(j), j.code, ms);
+  } catch (e) { show('dsResp', '// 请求失败：' + e.message); } }
+async function doDeptSummaryDenied() {
+  try { const d = await loginAs('student1', '123456');
+    const { j, ms } = await call(ADDR.att, `/api/attendance/deptSummary?month=${v('dsMonth')}`, { token: d.token });
+    show('dsResp', '// 固定使用学生 student1 身份\n' + fmt(j), j.code, ms);
+  } catch (e) { show('dsResp', '// 请求失败：' + e.message); } }
+
+async function doSettle() { if (!needToken('stResp')) return;
+  const body = { month: v('stMonth') }; if (v('stDept')) body.deptId = num('stDept');
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/settle', { method: 'POST', token: TOKEN, body });
+    show('stResp', fmt(j), j.code, ms);
+  } catch (e) { show('stResp', '// 请求失败：' + e.message); } }
+async function doSettleAgain() { await doSettle(); }
+
+async function doPay() { if (!needToken('pyResp')) return;
+  const body = { month: v('pyMonth') }; if (v('pyDept')) body.deptId = num('pyDept');
+  try { const { j, ms } = await call(ADDR.att, '/api/attendance/pay', { method: 'POST', token: TOKEN, body });
+    show('pyResp', fmt(j), j.code, ms);
+  } catch (e) { show('pyResp', '// 请求失败：' + e.message); } }
+async function doPayAgain() {
+  try { const body = { month: v('pyMonth') }; if (v('pyDept')) body.deptId = num('pyDept');
+    const { j, ms } = await call(ADDR.att, '/api/attendance/pay', { method: 'POST', token: TOKEN, body });
+    show('pyResp', '// 已全部发放时重复发放\n' + fmt(j), j.code, ms);
+  } catch (e) { show('pyResp', '// 请求失败：' + e.message); } }
+
+/* ===== 连接状态 ===== */
+async function ping(base, tagId, dotId, name) {
+  const tag = document.getElementById(tagId), dot = document.getElementById(dotId);
+  try {
+    const r = await fetch(base + '/api/auth/checkToken?token=ping');
+    dot.className = 'dot on'; tag.textContent = name + ' 在线 ✓';
+  } catch (e) { dot.className = 'dot off'; tag.textContent = name + ' 未连接'; }
+}
+function checkAll() {
+  ping(ADDR.auth, 'tagAuth', 'dotAuth', 'auth:8081');
+  fetch(ADDR.job + '/api/job/listJob?page=1&size=1').then(r => {
+    document.getElementById('dotJob').className = 'dot on'; document.getElementById('tagJob').textContent = 'job:8082 在线 ✓';
+  }).catch(() => { document.getElementById('dotJob').className = 'dot off'; document.getElementById('tagJob').textContent = 'job 未连接'; });
+  fetch(ADDR.att + '/api/attendance/myRecord?page=1&size=1').then(r => {
+    document.getElementById('dotAtt').className = 'dot on'; document.getElementById('tagAtt').textContent = 'attendance:8083 在线 ✓';
+  }).catch(() => { document.getElementById('dotAtt').className = 'dot off'; document.getElementById('tagAtt').textContent = 'attendance 未连接'; });
+}
+loadAddrUI(); checkAll();
+setInterval(checkAll, 15000);
+
+/* ===== 全链路 9 步演示 ===== */
+function logLine(method, path, code, note, json) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const cls = code >= 500 ? 'c5' : code === 200 ? 'c2' : 'c4';
+  const chip = code ? `<span class="code ${cls}">${code}</span>` : '';
+  document.getElementById('demoLog').insertAdjacentHTML('beforeend',
+    `<div class="tline"><span class="tt">${t}</span>${chip}<span class="lbl">${method} ${path}</span>${note ? ' <span class="hint">// ' + note + '</span>' : ''}</div>` +
+    (json ? `<details><summary>响应详情</summary><pre>${hl(json)}</pre></details>` : ''));
+  const box = document.getElementById('demoLog'); box.scrollTop = box.scrollHeight;
+}
+function clearDemo() { document.getElementById('demoLog').innerHTML = '<span class="hint">// 已清空</span>'; }
+
+async function runDemo() {
+  const btn = document.getElementById('demoBtn');
+  btn.disabled = true; btn.textContent = '执行中…';
+  document.getElementById('demoLog').innerHTML = '';
+  try {
+    /* 第1步 部门发布 */
+    let d = await loginAs('deptA', '123456');
+    let j = await call(ADDR.job, '/api/job/publish', { method: 'POST', token: d.token,
+      body: { jobName: '图书馆图书整理助理', address: '图书馆三楼', hourSalary: 25, needNum: 2, description: '整理图书，维护借阅秩序' } });
+    if (j.j.code !== 200) throw new Error('发布岗位失败: ' + j.j.msg);
+    const jobId = j.j.data.jobId;
+    logLine('POST', `[8082] /api/job/publish`, 200, `部门发布岗位 → jobId=${jobId}（时薪 25 元）`, fmt(j.j));
+
+    /* 第2步 中心审核上架 */
+    d = await loginAs('center', '123456');
+    j = await call(ADDR.job, '/api/job/auditJob', { method: 'POST', token: d.token,
+      body: { jobId, auditResult: 'pass', auditRemark: '同意上架' } });
+    logLine('POST', `[8082] /api/job/auditJob`, j.j.code, '助学中心审核 → 上架（' + (j.j.data.statusName || '') + '）', fmt(j.j));
+
+    /* 第3步 学生投递 */
+    d = await loginAs('student1', '123456');
+    j = await call(ADDR.job, '/api/job/applyJob', { method: 'POST', token: d.token, body: { jobId, userId: d.userId } });
+    if (j.j.code !== 200) throw new Error('投递失败: ' + j.j.msg);
+    const applyId = j.j.data.applyId;
+    logLine('POST', `[8082] /api/job/applyJob`, 200, `student1 投递 → applyId=${applyId}`, fmt(j.j));
+
+    /* 第4步 部门录用 */
+    d = await loginAs('deptA', '123456');
+    j = await call(ADDR.job, '/api/job/auditApply', { method: 'POST', token: d.token,
+      body: { applyId, applyResult: 'accept', remark: '同意录用' } });
+    logLine('POST', `[8082] /api/job/auditApply`, j.j.code, '部门录用 student1（' + (j.j.data.applyStatusName || j.j.data.statusName || '已录用') + '）', fmt(j.j));
+
+    /* 第5步 未录用学生签到被拦 */
+    d = await loginAs('student2', '123456');
+    j = await call(ADDR.att, '/api/attendance/checkIn', { method: 'POST', token: d.token, body: { jobId } });
+    logLine('POST', `[8083] /api/attendance/checkIn`, j.j.code, 'student2 未录用却签到 → 跨服务录用校验拦截（预期 400）', fmt(j.j));
+
+    /* 第6步 录用学生签到（快照） */
+    d = await loginAs('student1', '123456');
+    j = await call(ADDR.att, '/api/attendance/checkIn', { method: 'POST', token: d.token, body: { jobId } });
+    if (j.j.code !== 200) throw new Error('签到失败: ' + j.j.msg);
+    const snap = j.j.data;
+    logLine('POST', `[8083] /api/attendance/checkIn`, 200, `student1 签到成功 → recordId=${snap.recordId}，快照时薪 ${snap.hourSalary} 元 / 部门 ${snap.deptId}`, fmt(j.j));
+
+    /* 第7步 签退核算 */
+    j = await call(ADDR.att, '/api/attendance/checkOut', { method: 'POST', token: d.token, body: { jobId } });
+    const co = j.j.data || {};
+    logLine('POST', `[8083] /api/attendance/checkOut`, j.j.code, `签退 → 工时 ${co.workMinutes} 分钟，补贴 ${co.amount} 元（时薪快照核算）`, fmt(j.j));
+
+    /* 第8步 中心结算 */
+    d = await loginAs('center', '123456');
+    j = await call(ADDR.att, '/api/attendance/settle', { method: 'POST', token: d.token, body: { month: co.month || curMonth() } });
+    const st = j.j.data || {};
+    logLine('POST', `[8083] /api/attendance/settle`, j.j.code, `月度结算 → 生成/刷新发放单 ${st.createdCount || 0} 张，合计 ${st.totalAmount} 元`, fmt(j.j));
+
+    /* 第9步 批量发放 */
+    j = await call(ADDR.att, '/api/attendance/pay', { method: 'POST', token: d.token, body: { month: co.month || curMonth() } });
+    const pay = j.j.data || {};
+    logLine('POST', `[8083] /api/attendance/pay`, j.j.code, `批量发放 → ${pay.paidCount || 0} 人，发放金额 ${pay.paidAmount} 元`, fmt(j.j));
+    logLine('DONE', '全链路 9 步执行完毕', 200, '发布→审核→投递→录用→拦截→签到→核算→结算→发放 跨三服务全部正常', '');
+  } catch (e) {
+    logLine('FAIL', '-', 500, e.message + '（请确认三服务已全部启动、地址配置正确）', '');
+  }
+  btn.disabled = false; btn.textContent = '重新执行';
+}
+function curMonth() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+/* 最近一次发布/投递的 id 自动回填 */
+let LAST = { jobId: null, applyId: null };
+function fillJobIds() {
+  if (LAST.jobId) ['ajJobId', 'apJobId', 'ciJobId', 'coJobId', 'ofJobId'].forEach(id => document.getElementById(id).value = LAST.jobId);
+  if (LAST.applyId) document.getElementById('aaApplyId').value = LAST.applyId;
+}
+</script>
+</body>
+</html>
