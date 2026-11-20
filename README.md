@@ -9,6 +9,7 @@
 | 用户权限服务（auth-service） | 8081 | 仓库根目录 | 成员 3 | 已完成 | 见本文第五节、《交接说明.md》 |
 | 岗位申请与审核服务（job-service） | 8082 | `job-service/` | 成员 4 | 已完成 | [job-service/README.md](job-service/README.md) |
 | 工时考勤与补贴核算服务（attendance-service） | 8083 | `attendance-service/` | 成员 5 | 已完成 | [attendance-service/README.md](attendance-service/README.md) |
+| 部署与演示保障（跨机部署、联调验证、现场演示、过程管理） | — | 仓库根目录（`部署手册.md` 等） | 成员 6 | 已完成（跨机联调 37/37 通过） | 《部署手册.md》《演示当天Runbook.md》 |
 
 > 说明：本仓库根目录本身就是用户权限服务工程（成员 3 建立），
 > 岗位服务是与它平级的独立 Maven 工程，放在 `job-service/` 目录下，可单独构建、单独部署。
@@ -65,6 +66,9 @@
 | `交接说明.md` | 权限服务交接：接口约定、接入步骤、排错速查 | 成员 3 |
 | `环境搭建指南.md` | JDK / VS Code / Maven 环境配置 | 成员 3 |
 | `接口测试台.html` | 权限服务浏览器图形化测试工具 | 成员 3 |
+| `三服务演示台.html` | 三服务联合演示：全链路 9 步自动化演示、各接口反例按钮、服务地址可配置 | 成员 6 |
+| `部署手册.md` | 单机/跨机部署：拓扑、构建启动命令、环境变量矩阵、防火墙放行、故障排查 | 成员 6 |
+| `演示当天Runbook.md` | 演示前 checklist、故障 30 秒处置表、应急降级与切视频纪律 | 成员 6 |
 | `原始任务分布.doc`、`需求文档.doc`、`接口文档初稿.doc` | 分工、需求、接口原始材料 | 全体 |
 
 ---
@@ -107,6 +111,10 @@ mvn spring-boot:run
 ```
 
 启动成功后服务跑在 **8081 端口**（约定：auth=8081 / job=8082 / attendance=8083）。
+
+> ⚠️ **中文路径下 `mvn spring-boot:run` 会启动失败**（fork JVM 找不到主类，详见缺陷记录 BUG-03，
+> 已在 JDK 21 / 23 双版本复现）。演示/部署一律改用打包方式：
+> `mvn package -DskipTests` 后 `java -jar target/*.jar`，完整说明见《部署手册.md》。
 
 **首次使用先跑一遍测试（验证环境没问题）：**
 在测试文件 `AuthServiceTests.java` 上点 Run，7 个用例全绿即 OK。
@@ -198,7 +206,10 @@ curl -X POST http://localhost:8081/api/auth/addUser \
 ├── README.md                        # 本文件（系统总 README，含权限服务详细说明）
 ├── 交接说明.md                       # 接口约定、接入步骤、排错（给后续成员）
 ├── 环境搭建指南.md                   # 环境配置步骤（macOS / Windows）
-├── 接口测试台.html                   # 浏览器图形化测试工具
+├── 接口测试台.html                   # 浏览器图形化测试工具（auth 服务）
+├── 三服务演示台.html                 # 三服务联合演示台（全链路 9 步自动化演示，成员 6）
+├── 部署手册.md                       # 单机/跨机部署标准操作与排错（成员 6）
+├── 演示当天Runbook.md                # 演示前 checklist 与故障处置（成员 6）
 ├── job-service/                     # 岗位申请与审核服务（成员 4，独立 Maven 工程，端口 8082）
 └── src
     ├── main
@@ -255,6 +266,9 @@ curl -X POST http://localhost:8081/api/auth/addUser \
   登录鉴权、Token 失效 401、未录用拦截 400、签到签退金额核算、数据隔离、部门越权 403、岗位状态拦截、
   结算生成发放单、重复结算幂等、发放与重复发放拦截、记录分页、异常核实权限与状态校验；
   另用 `degrade_test.py` 停掉岗位服务验证降级（写操作 500 不放行、查询类接口仍可用）
+- **跨机分布式部署验证通过**（成员 6，2026-11-20）：Windows 11 宿主机跑 auth(8081)+job(8082)，
+  VMware Ubuntu 虚拟机（NAT）跑 attendance(8083)，`smoke_test.py` 地址改为局域网 IP 后 **37/37 全部通过**，
+  满足课程「多个子系统跑在不同机器」要求；部署方法见《部署手册.md》，部署缺陷记录见《测试与缺陷记录.md》第六节
 - 联调前务必**删掉 `attendance-service/data/`**（H2 文件库，残留的未签退记录会导致签到被拦成 400）
 - 逐条结果与缺陷排查过程见 [attendance-service/测试与缺陷记录.md](attendance-service/测试与缺陷记录.md)
 - 现场演示按 [attendance-service/演示脚本.md](attendance-service/演示脚本.md) 执行（9 步、约 7 分钟，含应急方案与答辩问答）
