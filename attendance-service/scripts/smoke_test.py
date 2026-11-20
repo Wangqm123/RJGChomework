@@ -11,9 +11,10 @@ import urllib.request
 from datetime import datetime
 from decimal import Decimal
 
-AUTH = "http://localhost:8081"
-JOB = "http://localhost:8082"
-ATT = "http://localhost:8083"
+AUTH = "http://192.168.181.1:8081"
+JOB  = "http://192.168.181.1:8082"
+ATT  = "http://192.168.181.128:8083"
+
 
 PASSWORD = "123" + "456"
 JOIN_WAIT_SECONDS = 75
